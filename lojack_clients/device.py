@@ -1,77 +1,335 @@
+"""Device wrapper classes with high-level helper methods.
+
+These classes wrap the raw device data and provide convenient
+async methods for common operations like getting location,
+sending commands, etc.
+"""
+
 from __future__ import annotations
 
-import json
-import base64
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional
+
+from .exceptions import CommandError, InvalidParameterError
+from .models import DeviceInfo, Location, VehicleInfo
+
+if TYPE_CHECKING:
+    from .api import LoJackClient
 
 
 class Device:
-    """Device wrapper providing high-level helpers for a single tracked device.
+    """Device wrapper providing high-level helpers for a tracked device.
 
-    Minimal methods: refresh/get_location/get_history, `lock`, and `wipe`.
-    It assumes server returns JSON locations directly (no encrypted blobs).
+    This class wraps a device and provides convenient async methods
+    for interacting with it through the LoJack API.
+
+    Attributes:
+        id: The device ID.
+        name: The device name (if available).
+        info: The underlying DeviceInfo dataclass with full device data.
+        client: Reference to the LoJackClient for API calls.
     """
-    def __init__(self, client: Any, device_id: str, raw: Optional[Dict[str, Any]] = None) -> None:
-        self.client = client
-        self.id = device_id
-        self.raw: Dict[str, Any] = raw or {}
-        self.name: Optional[str] = self.raw.get("name")
-        self.cached_location: Optional[Dict[str, Any]] = None
+
+    def __init__(
+        self,
+        client: "LoJackClient",
+        info: DeviceInfo,
+    ) -> None:
+        """Initialize the device wrapper.
+
+        Args:
+            client: The LoJackClient instance for API calls.
+            info: The DeviceInfo dataclass with device data.
+        """
+        self._client = client
+        self._info = info
+        self._cached_location: Optional[Location] = None
         self._last_refresh: Optional[datetime] = None
 
+    @property
+    def id(self) -> str:
+        """Return the device ID."""
+        return self._info.id
+
+    @property
+    def name(self) -> Optional[str]:
+        """Return the device name."""
+        return self._info.name
+
+    @property
+    def info(self) -> DeviceInfo:
+        """Return the underlying DeviceInfo dataclass."""
+        return self._info
+
+    @property
+    def last_seen(self) -> Optional[datetime]:
+        """Return when the device was last seen."""
+        return self._info.last_seen
+
+    @property
+    def cached_location(self) -> Optional[Location]:
+        """Return the cached location (may be stale)."""
+        return self._cached_location
+
+    @property
+    def last_refresh(self) -> Optional[datetime]:
+        """Return when the location was last refreshed."""
+        return self._last_refresh
+
     async def refresh(self, *, force: bool = False) -> None:
-        """Refresh the device's most recent location and cache it.
+        """Refresh the device's cached location.
 
-        Delegates to `client.get_locations(device_id=..., num_to_get=1)` and
-        expects the server to return parsed JSON location objects.
+        Args:
+            force: If True, always fetch new data even if cached.
         """
-        if not force and self.cached_location is not None:
+        if not force and self._cached_location is not None:
             return
 
-        locations = await self.client.get_locations(device_id=self.id, num_to_get=1)
-        if not locations:
-            self.cached_location = None
-            return
+        locations = await self._client.get_locations(self.id, limit=1)
+        if locations:
+            self._cached_location = locations[0]
+        else:
+            self._cached_location = None
 
-        # Expect each location entry to already be a parsed mapping
-        self.cached_location = locations[0] if isinstance(locations, list) else None
         self._last_refresh = datetime.now(timezone.utc)
 
-    async def get_location(self, *, force: bool = False) -> Optional[Dict[str, Any]]:
-        if force or self.cached_location is None:
-            await self.refresh(force=force)
-        return self.cached_location
+    async def get_location(self, *, force: bool = False) -> Optional[Location]:
+        """Get the device's current location.
 
-    async def get_history(self, start: Optional[int] = None, end: Optional[int] = None, limit: int = -1) -> AsyncIterator[Dict[str, Any]]:
-        """Async iterator over historical location objects (newest-first).
+        Args:
+            force: If True, fetch fresh data from the API.
 
-        Uses `client.get_locations(device_id=..., num_to_get=...)` and yields
-        JSON mapping objects directly.
+        Returns:
+            The device's location, or None if unavailable.
         """
-        locations = await self.client.get_locations(device_id=self.id, num_to_get=limit)
+        if force or self._cached_location is None:
+            await self.refresh(force=force)
+        return self._cached_location
+
+    async def get_history(
+        self,
+        *,
+        limit: int = 100,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+    ) -> AsyncIterator[Location]:
+        """Iterate over the device's location history.
+
+        Args:
+            limit: Maximum number of locations to return (-1 for all).
+            start_time: Optional start time filter.
+            end_time: Optional end time filter.
+
+        Yields:
+            Location objects from newest to oldest.
+        """
+        locations = await self._client.get_locations(
+            self.id,
+            limit=limit,
+            start_time=start_time,
+            end_time=end_time,
+        )
         for loc in locations:
             yield loc
 
-    async def lock(self, message: Optional[str] = None, passcode: Optional[str] = None) -> bool:
-        base = "lock"
-        if message:
-            sanitized = " ".join(message.strip().split())
-            for ch in ['"', "'", "`", ";"]:
-                sanitized = sanitized.replace(ch, "")
-            if len(sanitized) > 120:
-                sanitized = sanitized[:120]
-            if sanitized:
-                base = f"lock {sanitized}"
-        return await self.client.send_command(self.id, base)
+    async def send_command(self, command: str) -> bool:
+        """Send a raw command to the device.
 
-    async def wipe(self, pin: Optional[str] = None, *, confirm: bool = False) -> bool:
-        if not confirm:
-            raise Exception("wipe() requires confirm=True to proceed (destructive action)")
-        if not pin:
-            raise Exception("wipe() requires a PIN: pass pin='yourPIN123'")
-        if not all(ch.isalnum() and ord(ch) < 128 for ch in pin):
-            raise Exception("PIN must contain only alphanumeric ASCII characters (a-z, A-Z, 0-9), no spaces")
-        command = f"fmd delete {pin}"
-        return await self.client.send_command(self.id, command)
+        Args:
+            command: The command string to send.
+
+        Returns:
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
+        """
+        return await self._client.send_command(self.id, command)
+
+    async def request_location_update(self) -> bool:
+        """Request the device to report its current location.
+
+        Returns:
+            True if the request was accepted.
+        """
+        return await self.send_command("locate")
+
+    async def lock(
+        self,
+        *,
+        message: Optional[str] = None,
+        passcode: Optional[str] = None,
+    ) -> bool:
+        """Lock the device.
+
+        Args:
+            message: Optional message to display on the device.
+            passcode: Optional passcode for unlocking.
+
+        Returns:
+            True if the lock command was accepted.
+        """
+        command = "lock"
+
+        if message:
+            # Sanitize the message
+            sanitized = _sanitize_message(message)
+            if sanitized:
+                command = f"lock {sanitized}"
+
+        if passcode:
+            if not _is_valid_passcode(passcode):
+                raise InvalidParameterError(
+                    "passcode",
+                    passcode,
+                    "Must be alphanumeric ASCII characters only",
+                )
+
+        return await self.send_command(command)
+
+    async def unlock(self) -> bool:
+        """Unlock the device.
+
+        Returns:
+            True if the unlock command was accepted.
+        """
+        return await self.send_command("unlock")
+
+    async def ring(self, *, duration: Optional[int] = None) -> bool:
+        """Make the device ring/alarm.
+
+        Args:
+            duration: Optional duration in seconds.
+
+        Returns:
+            True if the ring command was accepted.
+        """
+        command = "ring"
+        if duration is not None:
+            if duration < 1 or duration > 300:
+                raise InvalidParameterError(
+                    "duration",
+                    duration,
+                    "Must be between 1 and 300 seconds",
+                )
+            command = f"ring {duration}"
+        return await self.send_command(command)
+
+    def __repr__(self) -> str:
+        return f"Device(id={self.id!r}, name={self.name!r})"
+
+
+class Vehicle(Device):
+    """Vehicle-specific device wrapper with additional vehicle data.
+
+    Extends Device with vehicle-specific properties like VIN,
+    make, model, etc.
+    """
+
+    def __init__(
+        self,
+        client: "LoJackClient",
+        info: VehicleInfo,
+    ) -> None:
+        """Initialize the vehicle wrapper.
+
+        Args:
+            client: The LoJackClient instance for API calls.
+            info: The VehicleInfo dataclass with vehicle data.
+        """
+        super().__init__(client, info)
+        self._vehicle_info = info
+
+    @property
+    def info(self) -> VehicleInfo:
+        """Return the underlying VehicleInfo dataclass."""
+        return self._vehicle_info
+
+    @property
+    def vin(self) -> Optional[str]:
+        """Return the vehicle's VIN."""
+        return self._vehicle_info.vin
+
+    @property
+    def make(self) -> Optional[str]:
+        """Return the vehicle's make."""
+        return self._vehicle_info.make
+
+    @property
+    def model(self) -> Optional[str]:
+        """Return the vehicle's model."""
+        return self._vehicle_info.model
+
+    @property
+    def year(self) -> Optional[int]:
+        """Return the vehicle's year."""
+        return self._vehicle_info.year
+
+    @property
+    def license_plate(self) -> Optional[str]:
+        """Return the vehicle's license plate."""
+        return self._vehicle_info.license_plate
+
+    @property
+    def odometer(self) -> Optional[float]:
+        """Return the vehicle's odometer reading."""
+        return self._vehicle_info.odometer
+
+    async def start_engine(self) -> bool:
+        """Remote start the vehicle's engine.
+
+        Returns:
+            True if the command was accepted.
+        """
+        return await self.send_command("start")
+
+    async def stop_engine(self) -> bool:
+        """Remote stop the vehicle's engine.
+
+        Returns:
+            True if the command was accepted.
+        """
+        return await self.send_command("stop")
+
+    async def honk_horn(self) -> bool:
+        """Honk the vehicle's horn.
+
+        Returns:
+            True if the command was accepted.
+        """
+        return await self.send_command("honk")
+
+    async def flash_lights(self) -> bool:
+        """Flash the vehicle's lights.
+
+        Returns:
+            True if the command was accepted.
+        """
+        return await self.send_command("flash")
+
+    def __repr__(self) -> str:
+        return f"Vehicle(id={self.id!r}, name={self.name!r}, vin={self.vin!r})"
+
+
+def _sanitize_message(message: str, max_length: int = 120) -> str:
+    """Sanitize a message for sending to a device.
+
+    Removes potentially dangerous characters and limits length.
+    """
+    # Normalize whitespace
+    sanitized = " ".join(message.strip().split())
+
+    # Remove potentially dangerous characters
+    for char in ['"', "'", "`", ";", "\\", "\n", "\r"]:
+        sanitized = sanitized.replace(char, "")
+
+    # Limit length
+    if len(sanitized) > max_length:
+        sanitized = sanitized[:max_length]
+
+    return sanitized
+
+
+def _is_valid_passcode(passcode: str) -> bool:
+    """Validate a passcode contains only safe characters."""
+    return all(c.isalnum() and ord(c) < 128 for c in passcode)

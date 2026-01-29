@@ -1,0 +1,166 @@
+"""Data models for LoJack API responses.
+
+These are simple dataclasses representing the raw data from the API.
+For objects with methods (refresh, lock, etc.), see device.py.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+
+@dataclass
+class Location:
+    """A single location point from the API."""
+
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    timestamp: Optional[datetime] = None
+    accuracy: Optional[float] = None
+    speed: Optional[float] = None
+    heading: Optional[float] = None
+    address: Optional[str] = None
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, data: Dict[str, Any]) -> "Location":
+        """Parse a location from API response data."""
+        loc = cls(raw=data)
+        loc.latitude = data.get("latitude") or data.get("lat")
+        loc.longitude = data.get("longitude") or data.get("lng") or data.get("lon")
+        loc.accuracy = data.get("accuracy")
+        loc.speed = data.get("speed")
+        loc.heading = data.get("heading") or data.get("bearing")
+        loc.address = data.get("address")
+
+        # Parse timestamp - try multiple formats
+        ts = data.get("timestamp") or data.get("time") or data.get("recorded_at")
+        if ts:
+            loc.timestamp = _parse_timestamp(ts)
+
+        return loc
+
+
+@dataclass
+class DeviceInfo:
+    """Basic device information from the API."""
+
+    id: str
+    name: Optional[str] = None
+    device_type: Optional[str] = None
+    status: Optional[str] = None
+    last_seen: Optional[datetime] = None
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, data: Dict[str, Any]) -> "DeviceInfo":
+        """Parse device info from API response data."""
+        device = cls(
+            id=data.get("id") or data.get("device_id") or "",
+            name=data.get("name") or data.get("device_name"),
+            device_type=data.get("type") or data.get("device_type"),
+            status=data.get("status"),
+            raw=data,
+        )
+
+        ts = data.get("last_seen") or data.get("lastSeen") or data.get("last_updated")
+        if ts:
+            device.last_seen = _parse_timestamp(ts)
+
+        return device
+
+
+@dataclass
+class VehicleInfo(DeviceInfo):
+    """Vehicle-specific information extending DeviceInfo."""
+
+    vin: Optional[str] = None
+    make: Optional[str] = None
+    model: Optional[str] = None
+    year: Optional[int] = None
+    license_plate: Optional[str] = None
+    odometer: Optional[float] = None
+
+    @classmethod
+    def from_api(cls, data: Dict[str, Any]) -> "VehicleInfo":
+        """Parse vehicle info from API response data."""
+        vehicle = cls(
+            id=data.get("id") or data.get("device_id") or data.get("vehicle_id") or "",
+            name=data.get("name") or data.get("vehicle_name"),
+            device_type=data.get("type") or data.get("device_type") or "vehicle",
+            status=data.get("status"),
+            raw=data,
+            vin=data.get("vin"),
+            make=data.get("make"),
+            model=data.get("model"),
+            license_plate=data.get("license_plate") or data.get("licensePlate"),
+        )
+
+        # Parse year
+        year = data.get("year")
+        if year is not None:
+            try:
+                vehicle.year = int(year)
+            except (ValueError, TypeError):
+                pass
+
+        # Parse odometer
+        odometer = data.get("odometer") or data.get("mileage")
+        if odometer is not None:
+            try:
+                vehicle.odometer = float(odometer)
+            except (ValueError, TypeError):
+                pass
+
+        ts = data.get("last_seen") or data.get("lastSeen") or data.get("last_updated")
+        if ts:
+            vehicle.last_seen = _parse_timestamp(ts)
+
+        return vehicle
+
+
+def _parse_timestamp(ts: Any) -> Optional[datetime]:
+    """Parse various timestamp formats into datetime."""
+    if ts is None:
+        return None
+
+    if isinstance(ts, datetime):
+        return ts
+
+    if isinstance(ts, (int, float)):
+        # Unix timestamp (seconds or milliseconds)
+        if ts > 1e12:  # Likely milliseconds
+            ts = ts / 1000
+        try:
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        except (ValueError, OSError):
+            return None
+
+    if isinstance(ts, str):
+        # Try ISO format first
+        for fmt in (
+            "%Y-%m-%dT%H:%M:%S.%fZ",
+            "%Y-%m-%dT%H:%M:%SZ",
+            "%Y-%m-%dT%H:%M:%S.%f%z",
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M:%S",
+        ):
+            try:
+                dt = datetime.strptime(ts, fmt)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            except ValueError:
+                continue
+
+        # Try fromisoformat as fallback
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            return dt
+        except ValueError:
+            pass
+
+    return None
