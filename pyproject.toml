@@ -3,8 +3,8 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lojack_clients"
-version = "0.4.0"
+name = "lojack_api"
+version = "0.5.0"
 description = "An async Python client library for the LoJack API, designed for Home Assistant integrations."
 readme = "README.md"
 authors = [{ name = "LoJack Clients Contributors" }]
@@ -46,10 +46,10 @@ dev = [
 "Bug Tracker" = "https://github.com/devinslick/lojack_api/issues"
 
 [tool.setuptools.packages.find]
-include = ["lojack_clients*"]
+include = ["lojack_api*"]
 
 [tool.setuptools.package-data]
-lojack_clients = ["py.typed"]
+lojack_api = ["py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

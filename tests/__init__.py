@@ -1,1 +1,1 @@
-"""Test suite for lojack_clients."""
+"""Test suite for lojack_api."""

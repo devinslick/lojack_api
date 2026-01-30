@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from lojack_clients.auth import AuthArtifacts, AuthManager
-from lojack_clients.exceptions import AuthenticationError
+from lojack_api.auth import AuthArtifacts, AuthManager
+from lojack_api.exceptions import AuthenticationError
 
 
 class TestAuthArtifacts:

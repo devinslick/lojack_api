@@ -1,4 +1,4 @@
-# lojack_clients
+# lojack_api
 
 An async Python client library for the Spireon LoJack API, designed for Home Assistant integrations.
 
@@ -27,7 +27,7 @@ pip install .[dev]
 
 ```python
 import asyncio
-from lojack_clients import LoJackClient
+from lojack_api import LoJackClient
 
 async def main():
     # Create and authenticate (uses default Spireon URLs)
@@ -54,7 +54,7 @@ asyncio.run(main())
 For Home Assistant integrations, you can persist authentication across restarts:
 
 ```python
-from lojack_clients import LoJackClient, AuthArtifacts
+from lojack_api import LoJackClient, AuthArtifacts
 
 # First time - login and save auth
 async def initial_login(username, password):
@@ -78,7 +78,7 @@ For Home Assistant integrations, pass the shared session:
 
 ```python
 from aiohttp import ClientSession
-from lojack_clients import LoJackClient
+from lojack_api import LoJackClient
 
 async def setup(hass_session: ClientSession, username, password):
     client = await LoJackClient.create(
@@ -94,7 +94,7 @@ async def setup(hass_session: ClientSession, username, password):
 Vehicles have additional properties and commands:
 
 ```python
-from lojack_clients import Vehicle
+from lojack_api import Vehicle
 
 async def vehicle_example(client):
     devices = await client.list_devices()
@@ -204,7 +204,7 @@ await vehicle.flash_lights()
 ### Data Models
 
 ```python
-from lojack_clients import Location, DeviceInfo, VehicleInfo
+from lojack_api import Location, DeviceInfo, VehicleInfo
 
 # Location
 location.latitude   # Optional[float]
@@ -220,7 +220,7 @@ location.raw        # Dict[str, Any]  # Original API response
 ### Exceptions
 
 ```python
-from lojack_clients import (
+from lojack_api import (
     LoJackError,           # Base exception
     AuthenticationError,   # 401 errors, invalid credentials
     AuthorizationError,    # 403 errors, permission denied
@@ -255,10 +255,10 @@ pip install .[dev]
 pytest
 
 # Run tests with coverage
-pytest --cov=lojack_clients
+pytest --cov=lojack_api
 
 # Type checking
-mypy lojack_clients
+mypy lojack_api
 
 # Linting
 # Preferred: ruff for quick fixes
@@ -266,7 +266,7 @@ ruff check .
 
 # Use flake8 for strict style checks (reports shown in CI)
 # Match ruff's line length setting
-flake8 lojack_clients/ tests/ --count --show-source --statistics --max-line-length=100
+flake8 lojack_api/ tests/ --count --show-source --statistics --max-line-length=100
 ```
 
 ## License

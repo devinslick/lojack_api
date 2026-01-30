@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from lojack_clients import AuthArtifacts, LoJackClient
-from lojack_clients.device import Device, Vehicle
-from lojack_clients.exceptions import (
+from lojack_api import AuthArtifacts, LoJackClient
+from lojack_api.device import Device, Vehicle
+from lojack_api.exceptions import (
     ApiError,
     DeviceNotFoundError,
 )
@@ -42,8 +42,8 @@ class TestLoJackClientCreate:
     async def test_create_authenticates(self):
         """Test that create() performs authentication."""
         with patch.object(LoJackClient, "__init__", return_value=None):
-            with patch("lojack_clients.api.AuthManager") as MockAuth:
-                with patch("lojack_clients.api.AiohttpTransport"):
+            with patch("lojack_api.api.AuthManager") as MockAuth:
+                with patch("lojack_api.api.AiohttpTransport"):
                     mock_auth = AsyncMock()
                     mock_auth.login = AsyncMock(return_value="token")
                     MockAuth.return_value = mock_auth

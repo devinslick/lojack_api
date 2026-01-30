@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 
-from lojack_clients import LoJackClient
+from lojack_api import LoJackClient
 
 
 def load_credentials(path: Path):

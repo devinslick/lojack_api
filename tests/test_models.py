@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from lojack_clients.models import DeviceInfo, Location, VehicleInfo, _parse_timestamp
+from lojack_api.models import DeviceInfo, Location, VehicleInfo, _parse_timestamp
 
 
 class TestParseTimestamp:
