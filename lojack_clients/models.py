@@ -63,6 +63,58 @@ class Location:
 
         return loc
 
+    @classmethod
+    def from_event(cls, event_data: Dict[str, Any]) -> "Location":
+        """Parse a location from a Spireon event.
+
+        Spireon events have a nested structure:
+        {
+            "location": {"lat": 40.7128, "lng": -74.0060},
+            "heading": 180,
+            "speed": 35,
+            "date": "2024-01-15T12:00:00.000+0000",
+            ...
+        }
+        """
+        loc = cls(raw=event_data)
+
+        # Get nested location object
+        location_data = event_data.get("location", {})
+
+        # Parse coordinates from nested location or top-level
+        loc.latitude = (
+            location_data.get("lat")
+            or location_data.get("latitude")
+            or event_data.get("lat")
+            or event_data.get("latitude")
+        )
+        loc.longitude = (
+            location_data.get("lng")
+            or location_data.get("lon")
+            or location_data.get("longitude")
+            or event_data.get("lng")
+            or event_data.get("lon")
+            or event_data.get("longitude")
+        )
+
+        # Speed and heading are at top level in events
+        loc.speed = event_data.get("speed")
+        loc.heading = event_data.get("heading") or event_data.get("bearing") or event_data.get("course")
+        loc.accuracy = event_data.get("accuracy") or event_data.get("hdop")
+        loc.address = event_data.get("address") or event_data.get("formattedAddress")
+
+        # Parse timestamp - events use "date" field
+        ts = (
+            event_data.get("date")
+            or event_data.get("eventDateTime")
+            or event_data.get("dateTime")
+            or event_data.get("timestamp")
+        )
+        if ts:
+            loc.timestamp = _parse_timestamp(ts)
+
+        return loc
+
 
 @dataclass
 class DeviceInfo:

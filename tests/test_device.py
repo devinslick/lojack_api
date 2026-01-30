@@ -69,6 +69,7 @@ class TestDevice:
     def mock_client(self):
         """Create a mock client."""
         client = MagicMock()
+        client.get_current_location = AsyncMock(return_value=None)
         client.get_locations = AsyncMock(return_value=[])
         client.send_command = AsyncMock(return_value=True)
         return client
@@ -87,13 +88,29 @@ class TestDevice:
     @pytest.mark.asyncio
     async def test_refresh(self, device, mock_client, location):
         """Test refreshing device location."""
+        # get_current_location returns None, so falls back to get_locations
+        mock_client.get_current_location.return_value = None
         mock_client.get_locations.return_value = [location]
 
         await device.refresh(force=True)
 
         assert device.cached_location == location
         assert device.last_refresh is not None
+        mock_client.get_current_location.assert_called_once()
         mock_client.get_locations.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_refresh_uses_current_location(self, device, mock_client, location):
+        """Test refreshing uses get_current_location when available."""
+        mock_client.get_current_location.return_value = location
+
+        await device.refresh(force=True)
+
+        assert device.cached_location == location
+        assert device.last_refresh is not None
+        mock_client.get_current_location.assert_called_once()
+        # Should NOT call get_locations when current location is available
+        mock_client.get_locations.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_refresh_skips_if_cached(self, device, mock_client, location):
@@ -107,7 +124,7 @@ class TestDevice:
     @pytest.mark.asyncio
     async def test_get_location(self, device, mock_client, location):
         """Test getting device location."""
-        mock_client.get_locations.return_value = [location]
+        mock_client.get_current_location.return_value = location
 
         result = await device.get_location()
 
@@ -119,12 +136,12 @@ class TestDevice:
         old_location = Location.from_api({"latitude": 0, "longitude": 0})
         device._cached_location = old_location
 
-        mock_client.get_locations.return_value = [location]
+        mock_client.get_current_location.return_value = location
 
         result = await device.get_location(force=True)
 
         assert result == location
-        mock_client.get_locations.assert_called_once()
+        mock_client.get_current_location.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_history(self, device, mock_client, location):
@@ -211,6 +228,7 @@ class TestVehicle:
     def mock_client(self):
         """Create a mock client."""
         client = MagicMock()
+        client.get_current_location = AsyncMock(return_value=None)
         client.get_locations = AsyncMock(return_value=[])
         client.send_command = AsyncMock(return_value=True)
         return client

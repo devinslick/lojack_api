@@ -85,11 +85,18 @@ class Device:
         if not force and self._cached_location is not None:
             return
 
-        locations = await self._client.get_locations(self.id, limit=1)
-        if locations:
-            self._cached_location = locations[0]
+        # First try to get current location from asset's lastLocation
+        # This is more current than fetching from events
+        location = await self._client.get_current_location(self.id)
+        if location and location.latitude is not None:
+            self._cached_location = location
         else:
-            self._cached_location = None
+            # Fall back to events endpoint
+            locations = await self._client.get_locations(self.id, limit=1)
+            if locations:
+                self._cached_location = locations[0]
+            else:
+                self._cached_location = None
 
         self._last_refresh = datetime.now(timezone.utc)
 
