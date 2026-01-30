@@ -80,6 +80,10 @@ class Device:
     async def refresh(self, *, force: bool = False) -> None:
         """Refresh the device's cached location.
 
+        Fetches location from the asset's lastLocation for coordinates,
+        then enriches it with telemetry data from the latest event
+        (speed, battery_voltage, signal_strength, etc.).
+
         Args:
             force: If True, always fetch new data even if cached.
         """
@@ -87,17 +91,22 @@ class Device:
             return
 
         # First try to get current location from asset's lastLocation
-        # This is more current than fetching from events
         location = await self._client.get_current_location(self.id)
+
+        # Always fetch latest event for telemetry data
+        events = await self._client.get_locations(self.id, limit=1)
+        latest_event = events[0] if events else None
+
         if location and location.latitude is not None:
+            # Enrich the lastLocation with telemetry from the event
+            if latest_event:
+                _enrich_location_from_event(location, latest_event)
             self._cached_location = location
+        elif latest_event:
+            # Use the event location directly (it has all the telemetry)
+            self._cached_location = latest_event
         else:
-            # Fall back to events endpoint
-            locations = await self._client.get_locations(self.id, limit=1)
-            if locations:
-                self._cached_location = locations[0]
-            else:
-                self._cached_location = None
+            self._cached_location = None
 
         self._last_refresh = datetime.now(timezone.utc)
 
@@ -341,3 +350,53 @@ def _sanitize_message(message: str, max_length: int = 120) -> str:
 def _is_valid_passcode(passcode: str) -> bool:
     """Validate a passcode contains only safe characters."""
     return all(c.isalnum() and ord(c) < 128 for c in passcode)
+
+
+def _enrich_location_from_event(location: Location, event: Location) -> None:
+    """Enrich a location with telemetry data from an event.
+
+    The asset's lastLocation typically only has coordinates, while
+    events contain rich telemetry data. This merges them.
+
+    Args:
+        location: The location to enrich (modified in place).
+        event: The event location with telemetry data.
+    """
+    # Only copy telemetry if the location is missing it
+    if location.speed is None and event.speed is not None:
+        location.speed = event.speed
+
+    if location.heading is None and event.heading is not None:
+        location.heading = event.heading
+
+    if location.odometer is None and event.odometer is not None:
+        location.odometer = event.odometer
+
+    if location.battery_voltage is None and event.battery_voltage is not None:
+        location.battery_voltage = event.battery_voltage
+
+    if location.engine_hours is None and event.engine_hours is not None:
+        location.engine_hours = event.engine_hours
+
+    if location.distance_driven is None and event.distance_driven is not None:
+        location.distance_driven = event.distance_driven
+
+    if location.signal_strength is None and event.signal_strength is not None:
+        location.signal_strength = event.signal_strength
+
+    if location.gps_fix_quality is None and event.gps_fix_quality is not None:
+        location.gps_fix_quality = event.gps_fix_quality
+
+    if location.event_type is None and event.event_type is not None:
+        location.event_type = event.event_type
+
+    if location.event_id is None and event.event_id is not None:
+        location.event_id = event.event_id
+
+    if location.address is None and event.address is not None:
+        location.address = event.address
+
+    # Also update timestamp if the event has a more recent one
+    if event.timestamp is not None:
+        if location.timestamp is None or event.timestamp > location.timestamp:
+            location.timestamp = event.timestamp

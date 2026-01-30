@@ -13,8 +13,12 @@ from typing import Any
 
 @dataclass
 class Location:
-    """A single location point from the API."""
+    """A single location point from the API.
 
+    Includes both basic location data and extended telemetry from events.
+    """
+
+    # Core location fields
     latitude: float | None = None
     longitude: float | None = None
     timestamp: datetime | None = None
@@ -22,6 +26,18 @@ class Location:
     speed: float | None = None
     heading: float | None = None
     address: str | None = None
+
+    # Extended telemetry from events
+    odometer: float | None = None
+    battery_voltage: float | None = None
+    engine_hours: float | None = None
+    distance_driven: float | None = None
+    signal_strength: float | None = None
+    gps_fix_quality: str | None = None
+    event_type: str | None = None
+    event_id: str | None = None
+
+    # Raw API response
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -67,12 +83,24 @@ class Location:
     def from_event(cls, event_data: dict[str, Any]) -> Location:
         """Parse a location from a Spireon event.
 
-        Spireon events have a nested structure:
+        Spireon events have a rich structure with telemetry data:
         {
-            "location": {"lat": 40.7128, "lng": -74.0060},
-            "heading": 180,
-            "speed": 35,
-            "date": "2024-01-15T12:00:00.000+0000",
+            "id": "b1b0c9c0-...",
+            "type": "SLEEP_ENTER",
+            "location": {
+                "lat": 32.643857,
+                "lng": -96.859561,
+                "address": {"line1": "...", "city": "...", ...}
+            },
+            "date": "2026-01-30T14:13:32.753+0000",
+            "odometer": 51747.42,
+            "batteryVoltage": 12.435,
+            "heading": 0.0,
+            "speed": 0,
+            "engineHours": 0.0,
+            "distanceDriven": 51742.42,
+            "signalStrength": 0.676,
+            "gpsFixQuality": "GOOD",
             ...
         }
         """
@@ -105,7 +133,75 @@ class Location:
             or event_data.get("course")
         )
         loc.accuracy = event_data.get("accuracy") or event_data.get("hdop")
-        loc.address = event_data.get("address") or event_data.get("formattedAddress")
+
+        # Parse address - can be string or nested object
+        addr = location_data.get("address") or event_data.get("address")
+        if isinstance(addr, dict):
+            # Format nested address: "line1, city, state postalCode"
+            parts = []
+            if addr.get("line1"):
+                parts.append(addr["line1"])
+            if addr.get("city"):
+                parts.append(addr["city"])
+            state_zip = []
+            if addr.get("stateOrProvince"):
+                state_zip.append(addr["stateOrProvince"])
+            if addr.get("postalCode"):
+                state_zip.append(addr["postalCode"])
+            if state_zip:
+                parts.append(" ".join(state_zip))
+            loc.address = ", ".join(parts) if parts else None
+        elif isinstance(addr, str):
+            loc.address = addr
+        else:
+            loc.address = event_data.get("formattedAddress")
+
+        # Extended telemetry fields
+        loc.event_id = event_data.get("id")
+        loc.event_type = event_data.get("type")
+
+        # Odometer
+        odometer = event_data.get("odometer")
+        if odometer is not None:
+            try:
+                loc.odometer = float(odometer)
+            except (ValueError, TypeError):
+                pass
+
+        # Battery voltage
+        battery = event_data.get("batteryVoltage")
+        if battery is not None:
+            try:
+                loc.battery_voltage = float(battery)
+            except (ValueError, TypeError):
+                pass
+
+        # Engine hours
+        engine_hours = event_data.get("engineHours")
+        if engine_hours is not None:
+            try:
+                loc.engine_hours = float(engine_hours)
+            except (ValueError, TypeError):
+                pass
+
+        # Distance driven
+        distance = event_data.get("distanceDriven")
+        if distance is not None:
+            try:
+                loc.distance_driven = float(distance)
+            except (ValueError, TypeError):
+                pass
+
+        # Signal strength (0.0 to 1.0)
+        signal = event_data.get("signalStrength")
+        if signal is not None:
+            try:
+                loc.signal_strength = float(signal)
+            except (ValueError, TypeError):
+                pass
+
+        # GPS fix quality (e.g., "GOOD", "POOR")
+        loc.gps_fix_quality = event_data.get("gpsFixQuality")
 
         # Parse timestamp - events use "date" field
         ts = (
