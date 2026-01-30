@@ -60,6 +60,20 @@ async def main():
 
         for device in devices:
             print(f"- {device.name or 'Unnamed'} ({device.id})")
+            
+            # Print all device attributes
+            print("  Device attributes:")
+            for attr in vars(device.info):
+                if attr != 'raw':  # Skip raw data for now
+                    value = getattr(device.info, attr)
+                    print(f"    {attr}: {value}")
+            
+            # Print raw API data if available
+            if device.info.raw:
+                print("  Raw device data:")
+                for key, value in device.info.raw.items():
+                    print(f"    {key}: {value}")
+            
             try:
                 loc = await device.get_location()
             except Exception as exc:
@@ -67,9 +81,17 @@ async def main():
                 continue
 
             if loc:
-                lat = getattr(loc, "latitude", None)
-                lon = getattr(loc, "longitude", None)
-                print(f"  Location: {lat}, {lon}")
+                print("  Location attributes:")
+                for attr in vars(loc):
+                    if attr != 'raw':  # Skip raw data for now
+                        value = getattr(loc, attr)
+                        print(f"    {attr}: {value}")
+                
+                # Print raw location data if available
+                if loc.raw:
+                    print("  Raw location data:")
+                    for key, value in loc.raw.items():
+                        print(f"    {key}: {value}")
             else:
                 print("  No location available")
 
