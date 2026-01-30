@@ -1,7 +1,7 @@
-"""High-level LoJack API client.
+"""High-level Spireon LoJack API client.
 
 This module provides the main entry point for interacting with the
-LoJack API. It follows Home Assistant best practices for async
+Spireon LoJack API. It follows Home Assistant best practices for async
 integrations.
 """
 
@@ -13,28 +13,37 @@ from typing import Any, Dict, List, Optional, Union
 
 import aiohttp
 
-from .auth import AuthArtifacts, AuthManager
+from .auth import AuthArtifacts, AuthManager, DEFAULT_APP_TOKEN
 from .device import Device, Vehicle
-from .exceptions import ApiError, AuthenticationError, DeviceNotFoundError
+from .exceptions import ApiError, DeviceNotFoundError
 from .models import DeviceInfo, Location, VehicleInfo
 from .transport import AiohttpTransport
 
 
+# Default Spireon API endpoints
+IDENTITY_URL = "https://identity.spireon.com"
+SERVICES_URL = "https://services.spireon.com/v0/rest"
+
+
 class LoJackClient:
-    """High-level async client for the LoJack API.
+    """High-level async client for the Spireon LoJack API.
 
     This client provides a clean interface for interacting with LoJack
     devices. It supports both context manager usage and manual lifecycle
     management.
 
+    The Spireon LoJack API uses separate services:
+    - Identity service for authentication
+    - Services API for device/asset management
+
     Example usage with context manager (recommended):
-        async with await LoJackClient.create(url, username, password) as client:
+        async with await LoJackClient.create(username, password) as client:
             devices = await client.list_devices()
             for device in devices:
                 location = await device.get_location()
 
     Example usage with manual lifecycle:
-        client = await LoJackClient.create(url, username, password)
+        client = await LoJackClient.create(username, password)
         try:
             devices = await client.list_devices()
         finally:
@@ -42,68 +51,91 @@ class LoJackClient:
 
     Example usage with session resumption:
         # First time - login and save auth
-        client = await LoJackClient.create(url, username, password)
+        client = await LoJackClient.create(username, password)
         auth_data = client.export_auth().to_dict()
         save_to_storage(auth_data)
         await client.close()
 
         # Later - resume without password
         auth = AuthArtifacts.from_dict(load_from_storage())
-        client = await LoJackClient.from_auth(url, auth)
+        client = await LoJackClient.from_auth(auth)
     """
 
     def __init__(
         self,
-        base_url: str,
         username: Optional[str] = None,
         password: Optional[str] = None,
+        identity_url: str = IDENTITY_URL,
+        services_url: str = SERVICES_URL,
         session: Optional[aiohttp.ClientSession] = None,
         timeout: float = 30.0,
         ssl_context: Optional[ssl.SSLContext] = None,
+        app_token: str = DEFAULT_APP_TOKEN,
     ) -> None:
         """Initialize the client.
 
         Note: Use the `create()` classmethod for proper async initialization.
 
         Args:
-            base_url: The base URL of the LoJack API.
             username: LoJack account username/email.
             password: LoJack account password.
+            identity_url: URL for the identity service (auth).
+            services_url: URL for the services API.
             session: Optional existing aiohttp session to use.
             timeout: Request timeout in seconds.
             ssl_context: Optional SSL context for custom certificates.
+            app_token: The X-Nspire-Apptoken value.
         """
-        self._base_url = base_url.rstrip("/")
-        self._transport = AiohttpTransport(
-            base_url,
+        self._identity_url = identity_url.rstrip("/")
+        self._services_url = services_url.rstrip("/")
+
+        # Separate transports for identity and services
+        self._identity_transport = AiohttpTransport(
+            identity_url,
             session=session,
             timeout=timeout,
             ssl_context=ssl_context,
         )
-        self._auth = AuthManager(self._transport, username, password)
+        self._services_transport = AiohttpTransport(
+            services_url,
+            session=session,
+            timeout=timeout,
+            ssl_context=ssl_context,
+        )
+
+        self._auth = AuthManager(
+            self._identity_transport,
+            username,
+            password,
+            app_token=app_token,
+        )
         self._closed = False
 
     @classmethod
     async def create(
         cls,
-        base_url: str,
         username: str,
         password: str,
+        identity_url: str = IDENTITY_URL,
+        services_url: str = SERVICES_URL,
         session: Optional[aiohttp.ClientSession] = None,
         timeout: float = 30.0,
         ssl_context: Optional[ssl.SSLContext] = None,
+        app_token: str = DEFAULT_APP_TOKEN,
     ) -> "LoJackClient":
         """Create a new client and authenticate.
 
         This is the recommended way to create a client instance.
 
         Args:
-            base_url: The base URL of the LoJack API.
             username: LoJack account username/email.
             password: LoJack account password.
+            identity_url: URL for the identity service.
+            services_url: URL for the services API.
             session: Optional existing aiohttp session to use.
             timeout: Request timeout in seconds.
             ssl_context: Optional SSL context for custom certificates.
+            app_token: The X-Nspire-Apptoken value.
 
         Returns:
             An authenticated LoJackClient instance.
@@ -112,12 +144,14 @@ class LoJackClient:
             AuthenticationError: If login fails.
         """
         client = cls(
-            base_url,
             username=username,
             password=password,
+            identity_url=identity_url,
+            services_url=services_url,
             session=session,
             timeout=timeout,
             ssl_context=ssl_context,
+            app_token=app_token,
         )
         await client._auth.login()
         return client
@@ -125,25 +159,29 @@ class LoJackClient:
     @classmethod
     async def from_auth(
         cls,
-        base_url: str,
         auth_artifacts: AuthArtifacts,
+        identity_url: str = IDENTITY_URL,
+        services_url: str = SERVICES_URL,
         session: Optional[aiohttp.ClientSession] = None,
         timeout: float = 30.0,
         ssl_context: Optional[ssl.SSLContext] = None,
+        app_token: str = DEFAULT_APP_TOKEN,
         username: Optional[str] = None,
         password: Optional[str] = None,
     ) -> "LoJackClient":
         """Create a client from previously exported auth artifacts.
 
         This allows session resumption without re-entering credentials.
-        The token will be refreshed if expired.
+        The token will be refreshed if expired (requires username/password).
 
         Args:
-            base_url: The base URL of the LoJack API.
             auth_artifacts: Previously exported authentication state.
+            identity_url: URL for the identity service.
+            services_url: URL for the services API.
             session: Optional existing aiohttp session to use.
             timeout: Request timeout in seconds.
             ssl_context: Optional SSL context for custom certificates.
+            app_token: The X-Nspire-Apptoken value.
             username: Optional username for token refresh fallback.
             password: Optional password for token refresh fallback.
 
@@ -151,12 +189,14 @@ class LoJackClient:
             A LoJackClient instance with restored authentication.
         """
         client = cls(
-            base_url,
             username=username,
             password=password,
+            identity_url=identity_url,
+            services_url=services_url,
             session=session,
             timeout=timeout,
             ssl_context=ssl_context,
+            app_token=app_token,
         )
         client._auth.import_auth_artifacts(auth_artifacts)
         return client
@@ -187,26 +227,33 @@ class LoJackClient:
         """
         return self._auth.export_auth_artifacts()
 
-    async def _auth_headers(self) -> Dict[str, str]:
-        """Get authorization headers with a valid token."""
-        token = await self._auth.get_token()
-        return {"Authorization": f"Bearer {token}"}
+    async def _get_headers(self) -> Dict[str, str]:
+        """Get headers for authenticated service requests."""
+        # Ensure we have a valid token
+        await self._auth.get_token()
+        return self._auth.get_auth_headers()
 
     async def list_devices(self) -> List[Union[Device, Vehicle]]:
-        """List all devices associated with the account.
+        """List all assets (devices/vehicles) associated with the account.
 
         Returns:
             A list of Device or Vehicle objects.
         """
-        headers = await self._auth_headers()
-        data = await self._transport.request("GET", "/devices", headers=headers)
+        headers = await self._get_headers()
+        data = await self._services_transport.request("GET", "/assets", headers=headers)
 
         devices: List[Union[Device, Vehicle]] = []
 
-        # Handle various response formats
+        # Handle Spireon response format: { "content": [...] }
         items: List[Any] = []
         if isinstance(data, dict):
-            items = data.get("devices") or data.get("assets") or data.get("vehicles") or []
+            items = (
+                data.get("content")
+                or data.get("devices")
+                or data.get("assets")
+                or data.get("vehicles")
+                or []
+            )
         elif isinstance(data, list):
             items = data
 
@@ -215,7 +262,9 @@ class LoJackClient:
                 continue
 
             # Determine if this is a vehicle or generic device
-            if item.get("vin") or item.get("type") == "vehicle":
+            # Spireon assets typically have "attributes" with vehicle info
+            attrs = item.get("attributes", {})
+            if attrs.get("vin") or item.get("vin"):
                 vehicle_info = VehicleInfo.from_api(item)
                 devices.append(Vehicle(self, vehicle_info))
             else:
@@ -225,22 +274,22 @@ class LoJackClient:
         return devices
 
     async def get_device(self, device_id: str) -> Union[Device, Vehicle]:
-        """Get a specific device by ID.
+        """Get a specific asset by ID.
 
         Args:
-            device_id: The device ID to fetch.
+            device_id: The asset ID to fetch.
 
         Returns:
             A Device or Vehicle object.
 
         Raises:
-            DeviceNotFoundError: If the device is not found.
+            DeviceNotFoundError: If the asset is not found.
         """
-        headers = await self._auth_headers()
-        path = f"/devices/{device_id}"
+        headers = await self._get_headers()
+        path = f"/assets/{device_id}"
 
         try:
-            data = await self._transport.request("GET", path, headers=headers)
+            data = await self._services_transport.request("GET", path, headers=headers)
         except ApiError as e:
             if e.status_code == 404:
                 raise DeviceNotFoundError(device_id) from e
@@ -249,10 +298,11 @@ class LoJackClient:
         if not isinstance(data, dict):
             raise DeviceNotFoundError(device_id)
 
-        # Check for nested device data
-        item: Dict[str, Any] = data.get("device") or data.get("asset") or data
+        # Check for nested data
+        item: Dict[str, Any] = data.get("content") or data.get("asset") or data
 
-        if item.get("vin") or item.get("type") == "vehicle":
+        attrs = item.get("attributes", {})
+        if attrs.get("vin") or item.get("vin"):
             vehicle_info = VehicleInfo.from_api(item)
             return Vehicle(self, vehicle_info)
         else:
@@ -268,10 +318,10 @@ class LoJackClient:
         end_time: Optional[datetime] = None,
         skip_empty: bool = False,
     ) -> List[Location]:
-        """Get location history for a device.
+        """Get location history (events) for a device.
 
         Args:
-            device_id: The device ID.
+            device_id: The asset ID.
             limit: Maximum number of locations to return (-1 for all).
             start_time: Optional start time filter.
             end_time: Optional end time filter.
@@ -280,32 +330,46 @@ class LoJackClient:
         Returns:
             A list of Location objects.
         """
-        headers = await self._auth_headers()
-        params: Dict[str, Any] = {}
+        headers = await self._get_headers()
+        params: Dict[str, Any] = {"assetId": device_id}
 
         if limit != -1:
             params["limit"] = limit
         if start_time:
-            params["start"] = start_time.isoformat()
+            params["startDateTime"] = start_time.isoformat()
         if end_time:
-            params["end"] = end_time.isoformat()
-        if skip_empty:
-            params["skip_empty"] = "1"
+            params["endDateTime"] = end_time.isoformat()
 
-        path = f"/devices/{device_id}/locations"
-        data = await self._transport.request("GET", path, params=params, headers=headers)
+        # Spireon uses /events endpoint for location history
+        data = await self._services_transport.request(
+            "GET", "/events", params=params, headers=headers
+        )
 
         # Parse response
         raw_locations: List[Any] = []
         if isinstance(data, dict):
-            raw_locations = data.get("locations") or data.get("history") or []
+            raw_locations = (
+                data.get("content")
+                or data.get("events")
+                or data.get("locations")
+                or data.get("history")
+                or []
+            )
         elif isinstance(data, list):
             raw_locations = data
 
         locations: List[Location] = []
         for item in raw_locations:
             if isinstance(item, dict):
-                locations.append(Location.from_api(item))
+                # Extract location from event
+                loc_data = item.get("location", item)
+                loc = Location.from_api(loc_data)
+
+                # Skip empty if requested
+                if skip_empty and loc.latitude is None and loc.longitude is None:
+                    continue
+
+                locations.append(loc)
 
         return locations
 
@@ -313,24 +377,34 @@ class LoJackClient:
         """Send a command to a device.
 
         Args:
-            device_id: The device ID.
-            command: The command string to send.
+            device_id: The asset ID.
+            command: The command type to send.
 
         Returns:
             True if the command was accepted.
         """
-        headers = await self._auth_headers()
-        payload = {"command": command}
-        path = f"/devices/{device_id}/commands"
+        headers = await self._get_headers()
 
-        data = await self._transport.request("POST", path, json=payload, headers=headers)
+        # Spireon uses specific command format
+        payload = {
+            "command": command.upper(),
+            "responseStrategy": "ASYNC",
+        }
+
+        path = f"/assets/{device_id}/commands"
+        data = await self._services_transport.request(
+            "POST", path, json=payload, headers=headers
+        )
 
         if isinstance(data, dict):
+            # Check for successful command submission
             return bool(
-                data.get("ok")
+                data.get("id")
+                or data.get("commandId")
+                or data.get("ok")
                 or data.get("accepted")
                 or data.get("success")
-                or data.get("status") == "ok"
+                or data.get("status") in ("ok", "PENDING", "SUBMITTED")
             )
         return True
 
@@ -340,4 +414,5 @@ class LoJackClient:
             return
 
         self._closed = True
-        await self._transport.close()
+        await self._identity_transport.close()
+        await self._services_transport.close()

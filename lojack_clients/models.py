@@ -28,15 +28,36 @@ class Location:
     def from_api(cls, data: Dict[str, Any]) -> "Location":
         """Parse a location from API response data."""
         loc = cls(raw=data)
-        loc.latitude = data.get("latitude") or data.get("lat")
-        loc.longitude = data.get("longitude") or data.get("lng") or data.get("lon")
-        loc.accuracy = data.get("accuracy")
+
+        # Handle nested coordinates (Spireon format)
+        coords = data.get("coordinates", {})
+
+        loc.latitude = (
+            data.get("latitude")
+            or data.get("lat")
+            or coords.get("latitude")
+            or coords.get("lat")
+        )
+        loc.longitude = (
+            data.get("longitude")
+            or data.get("lng")
+            or data.get("lon")
+            or coords.get("longitude")
+            or coords.get("lng")
+        )
+        loc.accuracy = data.get("accuracy") or data.get("hdop")
         loc.speed = data.get("speed")
-        loc.heading = data.get("heading") or data.get("bearing")
-        loc.address = data.get("address")
+        loc.heading = data.get("heading") or data.get("bearing") or data.get("course")
+        loc.address = data.get("address") or data.get("formattedAddress")
 
         # Parse timestamp - try multiple formats
-        ts = data.get("timestamp") or data.get("time") or data.get("recorded_at")
+        ts = (
+            data.get("timestamp")
+            or data.get("time")
+            or data.get("recorded_at")
+            or data.get("eventDateTime")
+            or data.get("dateTime")
+        )
         if ts:
             loc.timestamp = _parse_timestamp(ts)
 
@@ -57,15 +78,28 @@ class DeviceInfo:
     @classmethod
     def from_api(cls, data: Dict[str, Any]) -> "DeviceInfo":
         """Parse device info from API response data."""
+        # Handle Spireon's nested "attributes" structure
+        attrs = data.get("attributes", {})
+        status_obj = data.get("status", {})
+
         device = cls(
-            id=data.get("id") or data.get("device_id") or "",
-            name=data.get("name") or data.get("device_name"),
-            device_type=data.get("type") or data.get("device_type"),
-            status=data.get("status"),
+            id=data.get("id") or data.get("device_id") or data.get("assetId") or "",
+            name=data.get("name") or attrs.get("name") or data.get("device_name"),
+            device_type=data.get("type") or attrs.get("type") or data.get("device_type"),
+            status=(
+                status_obj.get("status")
+                if isinstance(status_obj, dict)
+                else data.get("status")
+            ),
             raw=data,
         )
 
-        ts = data.get("last_seen") or data.get("lastSeen") or data.get("last_updated")
+        ts = (
+            data.get("last_seen")
+            or data.get("lastSeen")
+            or data.get("last_updated")
+            or data.get("lastEventDateTime")
+        )
         if ts:
             device.last_seen = _parse_timestamp(ts)
 
@@ -86,35 +120,53 @@ class VehicleInfo(DeviceInfo):
     @classmethod
     def from_api(cls, data: Dict[str, Any]) -> "VehicleInfo":
         """Parse vehicle info from API response data."""
+        # Handle Spireon's nested "attributes" structure
+        attrs = data.get("attributes", {})
+        status_obj = data.get("status", {})
+
         vehicle = cls(
-            id=data.get("id") or data.get("device_id") or data.get("vehicle_id") or "",
-            name=data.get("name") or data.get("vehicle_name"),
-            device_type=data.get("type") or data.get("device_type") or "vehicle",
-            status=data.get("status"),
+            id=data.get("id") or data.get("device_id") or data.get("vehicle_id") or data.get("assetId") or "",
+            name=data.get("name") or attrs.get("name") or data.get("vehicle_name"),
+            device_type=data.get("type") or attrs.get("type") or data.get("device_type") or "vehicle",
+            status=(
+                status_obj.get("status")
+                if isinstance(status_obj, dict)
+                else data.get("status")
+            ),
             raw=data,
-            vin=data.get("vin"),
-            make=data.get("make"),
-            model=data.get("model"),
-            license_plate=data.get("license_plate") or data.get("licensePlate"),
+            vin=data.get("vin") or attrs.get("vin"),
+            make=data.get("make") or attrs.get("make"),
+            model=data.get("model") or attrs.get("model"),
+            license_plate=(
+                data.get("license_plate")
+                or data.get("licensePlate")
+                or attrs.get("licensePlate")
+                or attrs.get("license_plate")
+            ),
         )
 
-        # Parse year
-        year = data.get("year")
+        # Parse year from either top-level or attributes
+        year = data.get("year") or attrs.get("year")
         if year is not None:
             try:
                 vehicle.year = int(year)
             except (ValueError, TypeError):
                 pass
 
-        # Parse odometer
-        odometer = data.get("odometer") or data.get("mileage")
+        # Parse odometer from either top-level or attributes
+        odometer = data.get("odometer") or data.get("mileage") or attrs.get("odometer")
         if odometer is not None:
             try:
                 vehicle.odometer = float(odometer)
             except (ValueError, TypeError):
                 pass
 
-        ts = data.get("last_seen") or data.get("lastSeen") or data.get("last_updated")
+        ts = (
+            data.get("last_seen")
+            or data.get("lastSeen")
+            or data.get("last_updated")
+            or data.get("lastEventDateTime")
+        )
         if ts:
             vehicle.last_seen = _parse_timestamp(ts)
 

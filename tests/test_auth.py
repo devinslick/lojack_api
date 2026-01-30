@@ -101,9 +101,9 @@ class TestAuthManager:
     async def test_login_success(self, auth, transport):
         """Test successful login."""
         transport.request.return_value = {
-            "access_token": "new-token",
-            "expires_in": 3600,
-            "user_id": "user-123",
+            "token": "new-token",
+            "expiresIn": 3600,
+            "userId": "user-123",
         }
 
         token = await auth.login()
@@ -133,8 +133,8 @@ class TestAuthManager:
     async def test_get_token_triggers_login(self, auth, transport):
         """Test that get_token triggers login when no token."""
         transport.request.return_value = {
-            "access_token": "new-token",
-            "expires_in": 3600,
+            "token": "new-token",
+            "expiresIn": 3600,
         }
 
         token = await auth.get_token()
@@ -146,8 +146,8 @@ class TestAuthManager:
     async def test_get_token_returns_cached(self, auth, transport):
         """Test that get_token returns cached token if valid."""
         transport.request.return_value = {
-            "access_token": "new-token",
-            "expires_in": 3600,
+            "token": "new-token",
+            "expiresIn": 3600,
         }
 
         # First call triggers login
@@ -164,8 +164,8 @@ class TestAuthManager:
         """Test that get_token refreshes expired token."""
         # First response - token that's about to expire
         transport.request.return_value = {
-            "access_token": "old-token",
-            "expires_in": 30,  # Less than margin
+            "token": "old-token",
+            "expiresIn": 30,  # Less than margin
         }
         await auth.login()
 
@@ -174,8 +174,8 @@ class TestAuthManager:
 
         # Second response for refresh
         transport.request.return_value = {
-            "access_token": "new-token",
-            "expires_in": 3600,
+            "token": "new-token",
+            "expiresIn": 3600,
         }
 
         token = await auth.get_token()
@@ -186,7 +186,6 @@ class TestAuthManager:
         artifacts = AuthArtifacts(
             access_token="imported-token",
             expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-            refresh_token="imported-refresh",
             user_id="imported-user",
         )
 
@@ -198,19 +197,17 @@ class TestAuthManager:
         exported = auth.export_auth_artifacts()
         assert exported is not None
         assert exported.access_token == "imported-token"
-        assert exported.refresh_token == "imported-refresh"
+        assert exported.user_id == "imported-user"
 
     def test_clear(self, auth):
         """Test clearing auth state."""
         auth._access_token = "token"
-        auth._refresh_token = "refresh"
         auth._user_id = "user"
         auth._expires_at = datetime.now(timezone.utc)
 
         auth.clear()
 
         assert auth._access_token is None
-        assert auth._refresh_token is None
         assert auth._user_id is None
         assert auth._expires_at is None
         assert not auth.is_authenticated

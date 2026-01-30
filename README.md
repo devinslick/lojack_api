@@ -1,11 +1,12 @@
 # lojack_clients
 
-An async Python client library for the LoJack API, designed for Home Assistant integrations.
+An async Python client library for the Spireon LoJack API, designed for Home Assistant integrations.
 
 ## Features
 
 - **Async-first design** - Built with `asyncio` and `aiohttp` for non-blocking I/O
 - **No httpx dependency** - Uses `aiohttp` to avoid version conflicts with Home Assistant
+- **Spireon LoJack API** - Full support for the Spireon identity and services APIs
 - **Session management** - Automatic token refresh and session resumption support
 - **Type hints** - Full typing support with `py.typed` marker
 - **Clean device abstractions** - Device and Vehicle wrappers with convenient methods
@@ -29,13 +30,12 @@ import asyncio
 from lojack_clients import LoJackClient
 
 async def main():
-    # Create and authenticate
+    # Create and authenticate (uses default Spireon URLs)
     async with await LoJackClient.create(
-        "https://api.lojack.com",
         "your_username",
         "your_password"
     ) as client:
-        # List all devices
+        # List all devices/vehicles
         devices = await client.list_devices()
 
         for device in devices:
@@ -57,16 +57,18 @@ For Home Assistant integrations, you can persist authentication across restarts:
 from lojack_clients import LoJackClient, AuthArtifacts
 
 # First time - login and save auth
-async def initial_login():
-    client = await LoJackClient.create(url, username, password)
+async def initial_login(username, password):
+    client = await LoJackClient.create(username, password)
     auth_data = client.export_auth().to_dict()
     # Save auth_data to Home Assistant storage
+    await client.close()
     return auth_data
 
 # Later - resume without re-entering password
-async def resume_session(auth_data):
+async def resume_session(auth_data, username=None, password=None):
     auth = AuthArtifacts.from_dict(auth_data)
-    client = await LoJackClient.from_auth(url, auth)
+    # Pass credentials for auto-refresh if token expires
+    client = await LoJackClient.from_auth(auth, username=username, password=password)
     return client
 ```
 
@@ -78,9 +80,8 @@ For Home Assistant integrations, pass the shared session:
 from aiohttp import ClientSession
 from lojack_clients import LoJackClient
 
-async def setup(hass_session: ClientSession):
+async def setup(hass_session: ClientSession, username, password):
     client = await LoJackClient.create(
-        "https://api.lojack.com",
         username,
         password,
         session=hass_session  # Won't be closed when client closes
@@ -131,9 +132,17 @@ async for location in device.get_history(limit=100):
 The main entry point for the API.
 
 ```python
-# Factory methods
-client = await LoJackClient.create(base_url, username, password)
-client = await LoJackClient.from_auth(base_url, auth_artifacts)
+# Factory methods (using default Spireon URLs)
+client = await LoJackClient.create(username, password)
+client = await LoJackClient.from_auth(auth_artifacts)
+
+# With custom URLs
+client = await LoJackClient.create(
+    username,
+    password,
+    identity_url="https://identity.spireon.com",
+    services_url="https://services.spireon.com/v0/rest"
+)
 
 # Properties
 client.is_authenticated  # bool
@@ -224,6 +233,18 @@ from lojack_clients import (
 )
 ```
 
+### Spireon API Details
+
+The library uses the Spireon LoJack API:
+
+- **Identity Service**: `https://identity.spireon.com` - For authentication
+- **Services API**: `https://services.spireon.com/v0/rest` - For device/asset management
+
+Authentication uses HTTP Basic Auth with the following headers:
+- `X-Nspire-Apptoken` - Application token
+- `X-Nspire-Correlationid` - Unique request ID
+- `X-Nspire-Usertoken` - User token (after authentication)
+
 ## Development
 
 ```bash
@@ -250,3 +271,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Contributing
 
 Contributions are welcome! This library is designed to be vendored into Home Assistant integrations to avoid dependency conflicts.
+
+## Credits
+
+This library was inspired by the original [lojack-clients](https://github.com/scorgn/lojack-clients) package and uses the Spireon LoJack API endpoints.
