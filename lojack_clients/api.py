@@ -331,24 +331,26 @@ class LoJackClient:
             A list of Location objects.
         """
         headers = await self._get_headers()
-        params: Dict[str, Any] = {"assetId": device_id}
+        params: Dict[str, Any] = {}
 
         if limit != -1:
             params["limit"] = limit
         if start_time:
-            params["startDateTime"] = start_time.isoformat()
+            # Spireon uses this format: 2022-05-10T03:59:59.999+0000
+            params["startDate"] = start_time.strftime("%Y-%m-%dT%H:%M:%S.000+0000")
         if end_time:
-            params["endDateTime"] = end_time.isoformat()
+            params["endDate"] = end_time.strftime("%Y-%m-%dT%H:%M:%S.000+0000")
 
-        # Spireon uses /events endpoint for location history
+        # Spireon uses /assets/{id}/events endpoint for location history
+        path = f"/assets/{device_id}/events"
         data = await self._services_transport.request(
-            "GET", "/events", params=params, headers=headers
+            "GET", path, params=params, headers=headers
         )
 
         # Parse response
-        raw_locations: List[Any] = []
+        raw_events: List[Any] = []
         if isinstance(data, dict):
-            raw_locations = (
+            raw_events = (
                 data.get("content")
                 or data.get("events")
                 or data.get("locations")
@@ -356,14 +358,12 @@ class LoJackClient:
                 or []
             )
         elif isinstance(data, list):
-            raw_locations = data
+            raw_events = data
 
         locations: List[Location] = []
-        for item in raw_locations:
+        for item in raw_events:
             if isinstance(item, dict):
-                # Extract location from event
-                loc_data = item.get("location", item)
-                loc = Location.from_api(loc_data)
+                loc = Location.from_event(item)
 
                 # Skip empty if requested
                 if skip_empty and loc.latitude is None and loc.longitude is None:
@@ -372,6 +372,54 @@ class LoJackClient:
                 locations.append(loc)
 
         return locations
+
+    async def get_current_location(self, device_id: str) -> Optional[Location]:
+        """Get the current location for a device from the asset data.
+
+        This returns the lastLocation from the asset, which is more
+        current than fetching from events.
+
+        Args:
+            device_id: The asset ID.
+
+        Returns:
+            The current Location, or None if unavailable.
+        """
+        headers = await self._get_headers()
+        path = f"/assets/{device_id}"
+
+        try:
+            data = await self._services_transport.request("GET", path, headers=headers)
+        except ApiError:
+            return None
+
+        if not isinstance(data, dict):
+            return None
+
+        # Get lastLocation from asset
+        last_location = data.get("lastLocation")
+        if not last_location:
+            return None
+
+        loc = Location.from_api(last_location)
+
+        # Add timestamp from locationLastReported
+        if not loc.timestamp:
+            ts = data.get("locationLastReported")
+            if ts:
+                from .models import _parse_timestamp
+                loc.timestamp = _parse_timestamp(ts)
+
+        # Add speed from asset
+        if loc.speed is None:
+            speed = data.get("speed")
+            if speed is not None:
+                try:
+                    loc.speed = float(speed)
+                except (ValueError, TypeError):
+                    pass
+
+        return loc
 
     async def send_command(self, device_id: str, command: str) -> bool:
         """Send a command to a device.
