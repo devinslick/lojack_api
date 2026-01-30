@@ -5,7 +5,7 @@ LoJack devices. It is designed to be compatible with Home Assistant
 integrations and avoids the httpx dependency conflict.
 
 Example usage:
-    from lojack_clients import LoJackClient
+    from lojack_api import LoJackClient
 
     async with await LoJackClient.create(username, password) as client:
         devices = await client.list_devices()
@@ -37,7 +37,7 @@ from .exceptions import (
 from .models import DeviceInfo, Location, VehicleInfo
 from .transport import AiohttpTransport
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     # Main client

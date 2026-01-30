@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from lojack_clients.device import Device, Vehicle, _is_valid_passcode, _sanitize_message
-from lojack_clients.exceptions import InvalidParameterError
-from lojack_clients.models import Location
+from lojack_api.device import Device, Vehicle, _is_valid_passcode, _sanitize_message
+from lojack_api.exceptions import InvalidParameterError
+from lojack_api.models import Location
 
 
 class TestSanitizeMessage:

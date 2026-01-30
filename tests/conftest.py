@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from lojack_clients.auth import AuthManager
-from lojack_clients.models import DeviceInfo, Location, VehicleInfo
-from lojack_clients.transport import AiohttpTransport
+from lojack_api.auth import AuthManager
+from lojack_api.models import DeviceInfo, Location, VehicleInfo
+from lojack_api.transport import AiohttpTransport
 
 
 @pytest.fixture

@@ -5,13 +5,13 @@ from unittest.mock import AsyncMock, MagicMock
 import aiohttp
 import pytest
 
-from lojack_clients.exceptions import (
+from lojack_api.exceptions import (
     ApiError,
     AuthenticationError,
     AuthorizationError,
     ConnectionError,
 )
-from lojack_clients.transport import AiohttpTransport
+from lojack_api.transport import AiohttpTransport
 
 
 class TestAiohttpTransport:
