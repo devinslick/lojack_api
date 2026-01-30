@@ -8,24 +8,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 @dataclass
 class Location:
     """A single location point from the API."""
 
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    timestamp: Optional[datetime] = None
-    accuracy: Optional[float] = None
-    speed: Optional[float] = None
-    heading: Optional[float] = None
-    address: Optional[str] = None
-    raw: Dict[str, Any] = field(default_factory=dict)
+    latitude: float | None = None
+    longitude: float | None = None
+    timestamp: datetime | None = None
+    accuracy: float | None = None
+    speed: float | None = None
+    heading: float | None = None
+    address: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_api(cls, data: Dict[str, Any]) -> "Location":
+    def from_api(cls, data: dict[str, Any]) -> Location:
         """Parse a location from API response data."""
         loc = cls(raw=data)
 
@@ -64,7 +64,7 @@ class Location:
         return loc
 
     @classmethod
-    def from_event(cls, event_data: Dict[str, Any]) -> "Location":
+    def from_event(cls, event_data: dict[str, Any]) -> Location:
         """Parse a location from a Spireon event.
 
         Spireon events have a nested structure:
@@ -99,7 +99,11 @@ class Location:
 
         # Speed and heading are at top level in events
         loc.speed = event_data.get("speed")
-        loc.heading = event_data.get("heading") or event_data.get("bearing") or event_data.get("course")
+        loc.heading = (
+            event_data.get("heading")
+            or event_data.get("bearing")
+            or event_data.get("course")
+        )
         loc.accuracy = event_data.get("accuracy") or event_data.get("hdop")
         loc.address = event_data.get("address") or event_data.get("formattedAddress")
 
@@ -121,14 +125,14 @@ class DeviceInfo:
     """Basic device information from the API."""
 
     id: str
-    name: Optional[str] = None
-    device_type: Optional[str] = None
-    status: Optional[str] = None
-    last_seen: Optional[datetime] = None
-    raw: Dict[str, Any] = field(default_factory=dict)
+    name: str | None = None
+    device_type: str | None = None
+    status: str | None = None
+    last_seen: datetime | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_api(cls, data: Dict[str, Any]) -> "DeviceInfo":
+    def from_api(cls, data: dict[str, Any]) -> DeviceInfo:
         """Parse device info from API response data."""
         # Handle Spireon's nested "attributes" structure
         attrs = data.get("attributes", {})
@@ -162,24 +166,35 @@ class DeviceInfo:
 class VehicleInfo(DeviceInfo):
     """Vehicle-specific information extending DeviceInfo."""
 
-    vin: Optional[str] = None
-    make: Optional[str] = None
-    model: Optional[str] = None
-    year: Optional[int] = None
-    license_plate: Optional[str] = None
-    odometer: Optional[float] = None
+    vin: str | None = None
+    make: str | None = None
+    model: str | None = None
+    year: int | None = None
+    license_plate: str | None = None
+    odometer: float | None = None
 
     @classmethod
-    def from_api(cls, data: Dict[str, Any]) -> "VehicleInfo":
+    def from_api(cls, data: dict[str, Any]) -> VehicleInfo:
         """Parse vehicle info from API response data."""
         # Handle Spireon's nested "attributes" structure
         attrs = data.get("attributes", {})
         status_obj = data.get("status", {})
 
         vehicle = cls(
-            id=data.get("id") or data.get("device_id") or data.get("vehicle_id") or data.get("assetId") or "",
+            id=(
+                data.get("id")
+                or data.get("device_id")
+                or data.get("vehicle_id")
+                or data.get("assetId")
+                or ""
+            ),
             name=data.get("name") or attrs.get("name") or data.get("vehicle_name"),
-            device_type=data.get("type") or attrs.get("type") or data.get("device_type") or "vehicle",
+            device_type=(
+                data.get("type")
+                or attrs.get("type")
+                or data.get("device_type")
+                or "vehicle"
+            ),
             status=(
                 status_obj.get("status")
                 if isinstance(status_obj, dict)
@@ -225,7 +240,7 @@ class VehicleInfo(DeviceInfo):
         return vehicle
 
 
-def _parse_timestamp(ts: Any) -> Optional[datetime]:
+def _parse_timestamp(ts: Any) -> datetime | None:
     """Parse various timestamp formats into datetime."""
     if ts is None:
         return None

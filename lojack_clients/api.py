@@ -9,16 +9,15 @@ from __future__ import annotations
 
 import ssl
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import aiohttp
 
-from .auth import AuthArtifacts, AuthManager, DEFAULT_APP_TOKEN
+from .auth import DEFAULT_APP_TOKEN, AuthArtifacts, AuthManager
 from .device import Device, Vehicle
 from .exceptions import ApiError, DeviceNotFoundError
 from .models import DeviceInfo, Location, VehicleInfo
 from .transport import AiohttpTransport
-
 
 # Default Spireon API endpoints
 IDENTITY_URL = "https://identity.spireon.com"
@@ -63,13 +62,13 @@ class LoJackClient:
 
     def __init__(
         self,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
         identity_url: str = IDENTITY_URL,
         services_url: str = SERVICES_URL,
-        session: Optional[aiohttp.ClientSession] = None,
+        session: aiohttp.ClientSession | None = None,
         timeout: float = 30.0,
-        ssl_context: Optional[ssl.SSLContext] = None,
+        ssl_context: ssl.SSLContext | None = None,
         app_token: str = DEFAULT_APP_TOKEN,
     ) -> None:
         """Initialize the client.
@@ -118,11 +117,11 @@ class LoJackClient:
         password: str,
         identity_url: str = IDENTITY_URL,
         services_url: str = SERVICES_URL,
-        session: Optional[aiohttp.ClientSession] = None,
+        session: aiohttp.ClientSession | None = None,
         timeout: float = 30.0,
-        ssl_context: Optional[ssl.SSLContext] = None,
+        ssl_context: ssl.SSLContext | None = None,
         app_token: str = DEFAULT_APP_TOKEN,
-    ) -> "LoJackClient":
+    ) -> LoJackClient:
         """Create a new client and authenticate.
 
         This is the recommended way to create a client instance.
@@ -162,13 +161,13 @@ class LoJackClient:
         auth_artifacts: AuthArtifacts,
         identity_url: str = IDENTITY_URL,
         services_url: str = SERVICES_URL,
-        session: Optional[aiohttp.ClientSession] = None,
+        session: aiohttp.ClientSession | None = None,
         timeout: float = 30.0,
-        ssl_context: Optional[ssl.SSLContext] = None,
+        ssl_context: ssl.SSLContext | None = None,
         app_token: str = DEFAULT_APP_TOKEN,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-    ) -> "LoJackClient":
+        username: str | None = None,
+        password: str | None = None,
+    ) -> LoJackClient:
         """Create a client from previously exported auth artifacts.
 
         This allows session resumption without re-entering credentials.
@@ -201,7 +200,7 @@ class LoJackClient:
         client._auth.import_auth_artifacts(auth_artifacts)
         return client
 
-    async def __aenter__(self) -> "LoJackClient":
+    async def __aenter__(self) -> LoJackClient:
         """Enter async context manager."""
         return self
 
@@ -215,11 +214,11 @@ class LoJackClient:
         return self._auth.is_authenticated
 
     @property
-    def user_id(self) -> Optional[str]:
+    def user_id(self) -> str | None:
         """Return the authenticated user ID if available."""
         return self._auth.user_id
 
-    def export_auth(self) -> Optional[AuthArtifacts]:
+    def export_auth(self) -> AuthArtifacts | None:
         """Export current authentication state for later resumption.
 
         Returns:
@@ -227,13 +226,13 @@ class LoJackClient:
         """
         return self._auth.export_auth_artifacts()
 
-    async def _get_headers(self) -> Dict[str, str]:
+    async def _get_headers(self) -> dict[str, str]:
         """Get headers for authenticated service requests."""
         # Ensure we have a valid token
         await self._auth.get_token()
         return self._auth.get_auth_headers()
 
-    async def list_devices(self) -> List[Union[Device, Vehicle]]:
+    async def list_devices(self) -> list[Device | Vehicle]:
         """List all assets (devices/vehicles) associated with the account.
 
         Returns:
@@ -242,10 +241,10 @@ class LoJackClient:
         headers = await self._get_headers()
         data = await self._services_transport.request("GET", "/assets", headers=headers)
 
-        devices: List[Union[Device, Vehicle]] = []
+        devices: list[Device | Vehicle] = []
 
         # Handle Spireon response format: { "content": [...] }
-        items: List[Any] = []
+        items: list[Any] = []
         if isinstance(data, dict):
             items = (
                 data.get("content")
@@ -273,7 +272,7 @@ class LoJackClient:
 
         return devices
 
-    async def get_device(self, device_id: str) -> Union[Device, Vehicle]:
+    async def get_device(self, device_id: str) -> Device | Vehicle:
         """Get a specific asset by ID.
 
         Args:
@@ -299,7 +298,7 @@ class LoJackClient:
             raise DeviceNotFoundError(device_id)
 
         # Check for nested data
-        item: Dict[str, Any] = data.get("content") or data.get("asset") or data
+        item: dict[str, Any] = data.get("content") or data.get("asset") or data
 
         attrs = item.get("attributes", {})
         if attrs.get("vin") or item.get("vin"):
@@ -314,10 +313,10 @@ class LoJackClient:
         device_id: str,
         *,
         limit: int = -1,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         skip_empty: bool = False,
-    ) -> List[Location]:
+    ) -> list[Location]:
         """Get location history (events) for a device.
 
         Args:
@@ -331,7 +330,7 @@ class LoJackClient:
             A list of Location objects.
         """
         headers = await self._get_headers()
-        params: Dict[str, Any] = {}
+        params: dict[str, Any] = {}
 
         if limit != -1:
             params["limit"] = limit
@@ -348,7 +347,7 @@ class LoJackClient:
         )
 
         # Parse response
-        raw_events: List[Any] = []
+        raw_events: list[Any] = []
         if isinstance(data, dict):
             raw_events = (
                 data.get("content")
@@ -360,7 +359,7 @@ class LoJackClient:
         elif isinstance(data, list):
             raw_events = data
 
-        locations: List[Location] = []
+        locations: list[Location] = []
         for item in raw_events:
             if isinstance(item, dict):
                 loc = Location.from_event(item)
@@ -373,7 +372,7 @@ class LoJackClient:
 
         return locations
 
-    async def get_current_location(self, device_id: str) -> Optional[Location]:
+    async def get_current_location(self, device_id: str) -> Location | None:
         """Get the current location for a device from the asset data.
 
         This returns the lastLocation from the asset, which is more

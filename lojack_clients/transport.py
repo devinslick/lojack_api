@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import ssl
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import aiohttp
 
@@ -37,9 +37,9 @@ class AiohttpTransport:
     def __init__(
         self,
         base_url: str,
-        session: Optional[aiohttp.ClientSession] = None,
+        session: aiohttp.ClientSession | None = None,
         timeout: float = 30.0,
-        ssl_context: Optional[ssl.SSLContext] = None,
+        ssl_context: ssl.SSLContext | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._external_session = session is not None
@@ -72,10 +72,10 @@ class AiohttpTransport:
         method: str,
         path: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        json: Optional[Any] = None,
-        data: Optional[Any] = None,
-        headers: Optional[Dict[str, str]] = None,
+        params: dict[str, Any] | None = None,
+        json: Any | None = None,
+        data: Any | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Any:
         """Make an HTTP request to the API.
 
@@ -135,7 +135,7 @@ class AiohttpTransport:
         if "application/json" in content_type:
             try:
                 return await resp.json()
-            except (aiohttp.ContentTypeError, ValueError) as e:
+            except (aiohttp.ContentTypeError, ValueError):
                 # If JSON parsing fails, return text
                 text = await resp.text()
                 return text
@@ -153,8 +153,8 @@ class AiohttpTransport:
         self,
         status: int,
         message: str,
-        body: Optional[str] = None,
-    ) -> Union[AuthenticationError, AuthorizationError, ApiError]:
+        body: str | None = None,
+    ) -> AuthenticationError | AuthorizationError | ApiError:
         """Map HTTP status codes to appropriate exceptions."""
         if status == 401:
             return AuthenticationError(message or "Authentication failed")

@@ -24,12 +24,12 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lojack_clients import (
-    LoJackClient,
-    Vehicle,
-    Device,
-    AuthenticationError,
     IDENTITY_URL,
     SERVICES_URL,
+    AuthenticationError,
+    Device,
+    LoJackClient,
+    Vehicle,
 )
 
 
@@ -112,7 +112,7 @@ async def test_list_devices(client: LoJackClient) -> list:
                 print(f"  Odometer: {device.odometer}")
 
             # Show raw info
-            print(f"\n  --- Raw Device Info ---")
+            print("\n  --- Raw Device Info ---")
             print_dict(device.info.raw)
 
         return devices

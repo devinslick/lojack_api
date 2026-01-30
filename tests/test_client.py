@@ -1,15 +1,15 @@
 """Tests for the main LoJack client."""
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from lojack_clients import LoJackClient, AuthArtifacts
+import pytest
+
+from lojack_clients import AuthArtifacts, LoJackClient
 from lojack_clients.device import Device, Vehicle
 from lojack_clients.exceptions import (
-    AuthenticationError,
-    DeviceNotFoundError,
     ApiError,
+    DeviceNotFoundError,
 )
 
 
@@ -184,7 +184,12 @@ class TestLoJackClientDevices:
         """Test listing devices returns Vehicle objects for vehicles."""
         client._services_transport.request.return_value = {
             "content": [
-                {"id": "veh-1", "name": "My Car", "attributes": {"vin": "ABC123"}, "type": "vehicle"},
+                {
+                    "id": "veh-1",
+                    "name": "My Car",
+                    "attributes": {"vin": "ABC123"},
+                    "type": "vehicle",
+                },
             ]
         }
 

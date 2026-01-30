@@ -261,7 +261,12 @@ pytest --cov=lojack_clients
 mypy lojack_clients
 
 # Linting
-ruff check lojack_clients
+# Preferred: ruff for quick fixes
+ruff check .
+
+# Use flake8 for strict style checks (reports shown in CI)
+# Match ruff's line length setting
+flake8 lojack_clients/ tests/ --count --show-source --statistics --max-line-length=100
 ```
 
 ## License

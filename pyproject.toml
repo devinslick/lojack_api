@@ -37,6 +37,7 @@ dev = [
     "pytest-cov>=4.0",
     "mypy>=1.0",
     "ruff>=0.1",
+    "flake8>=4.0",
     "aioresponses>=0.7",
 ]
 

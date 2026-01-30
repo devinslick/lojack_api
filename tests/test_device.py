@@ -1,12 +1,12 @@
 """Tests for device wrapper classes."""
 
-import pytest
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from lojack_clients.device import Device, Vehicle, _sanitize_message, _is_valid_passcode
-from lojack_clients.models import DeviceInfo, VehicleInfo, Location
+import pytest
+
+from lojack_clients.device import Device, Vehicle, _is_valid_passcode, _sanitize_message
 from lojack_clients.exceptions import InvalidParameterError
+from lojack_clients.models import Location
 
 
 class TestSanitizeMessage:

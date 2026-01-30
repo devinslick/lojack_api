@@ -15,7 +15,7 @@ import base64
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from .exceptions import AuthenticationError
 
@@ -36,13 +36,13 @@ class AuthArtifacts:
     """
 
     access_token: str
-    expires_at: Optional[datetime] = None
-    refresh_token: Optional[str] = None
-    user_id: Optional[str] = None
+    expires_at: datetime | None = None
+    refresh_token: str | None = None
+    user_id: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to a dictionary for JSON serialization."""
-        data: Dict[str, Any] = {"access_token": self.access_token}
+        data: dict[str, Any] = {"access_token": self.access_token}
         if self.expires_at:
             data["expires_at"] = self.expires_at.isoformat()
         if self.refresh_token:
@@ -52,7 +52,7 @@ class AuthArtifacts:
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AuthArtifacts":
+    def from_dict(cls, data: dict[str, Any]) -> AuthArtifacts:
         """Create from a dictionary (e.g., loaded from JSON)."""
         expires_at = None
         if exp := data.get("expires_at"):
@@ -74,9 +74,9 @@ class AuthArtifacts:
 
 def get_spireon_headers(
     app_token: str = DEFAULT_APP_TOKEN,
-    user_token: Optional[str] = None,
-    basic_auth: Optional[str] = None,
-) -> Dict[str, str]:
+    user_token: str | None = None,
+    basic_auth: str | None = None,
+) -> dict[str, str]:
     """Build headers for Spireon API requests.
 
     Args:
@@ -123,9 +123,9 @@ class AuthManager:
 
     def __init__(
         self,
-        transport: "AiohttpTransport",
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        transport: AiohttpTransport,
+        username: str | None = None,
+        password: str | None = None,
         app_token: str = DEFAULT_APP_TOKEN,
         token_refresh_margin: int = 60,
     ) -> None:
@@ -135,9 +135,9 @@ class AuthManager:
         self._app_token = app_token
         self._token_refresh_margin = token_refresh_margin
 
-        self._access_token: Optional[str] = None
-        self._expires_at: Optional[datetime] = None
-        self._user_id: Optional[str] = None
+        self._access_token: str | None = None
+        self._expires_at: datetime | None = None
+        self._user_id: str | None = None
 
     @property
     def is_authenticated(self) -> bool:
@@ -149,7 +149,7 @@ class AuthManager:
         return True
 
     @property
-    def user_id(self) -> Optional[str]:
+    def user_id(self) -> str | None:
         """Return the authenticated user ID if available."""
         return self._user_id
 
@@ -168,7 +168,7 @@ class AuthManager:
         self._expires_at = artifacts.expires_at
         self._user_id = artifacts.user_id
 
-    def export_auth_artifacts(self) -> Optional[AuthArtifacts]:
+    def export_auth_artifacts(self) -> AuthArtifacts | None:
         """Export current auth state for persistence.
 
         Returns:
@@ -267,7 +267,7 @@ class AuthManager:
 
         return self._access_token
 
-    def get_auth_headers(self) -> Dict[str, str]:
+    def get_auth_headers(self) -> dict[str, str]:
         """Get headers for authenticated API requests.
 
         Returns:

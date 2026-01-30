@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+
 from lojack_clients import LoJackClient
 
 

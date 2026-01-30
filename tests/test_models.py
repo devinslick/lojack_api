@@ -1,9 +1,8 @@
 """Tests for data models."""
 
-import pytest
 from datetime import datetime, timezone
 
-from lojack_clients.models import DeviceInfo, VehicleInfo, Location, _parse_timestamp
+from lojack_clients.models import DeviceInfo, Location, VehicleInfo, _parse_timestamp
 
 
 class TestParseTimestamp:

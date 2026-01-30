@@ -7,10 +7,11 @@ sending commands, etc.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional
+from typing import TYPE_CHECKING
 
-from .exceptions import CommandError, InvalidParameterError
+from .exceptions import InvalidParameterError
 from .models import DeviceInfo, Location, VehicleInfo
 
 if TYPE_CHECKING:
@@ -32,7 +33,7 @@ class Device:
 
     def __init__(
         self,
-        client: "LoJackClient",
+        client: LoJackClient,
         info: DeviceInfo,
     ) -> None:
         """Initialize the device wrapper.
@@ -43,8 +44,8 @@ class Device:
         """
         self._client = client
         self._info = info
-        self._cached_location: Optional[Location] = None
-        self._last_refresh: Optional[datetime] = None
+        self._cached_location: Location | None = None
+        self._last_refresh: datetime | None = None
 
     @property
     def id(self) -> str:
@@ -52,7 +53,7 @@ class Device:
         return self._info.id
 
     @property
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         """Return the device name."""
         return self._info.name
 
@@ -62,17 +63,17 @@ class Device:
         return self._info
 
     @property
-    def last_seen(self) -> Optional[datetime]:
+    def last_seen(self) -> datetime | None:
         """Return when the device was last seen."""
         return self._info.last_seen
 
     @property
-    def cached_location(self) -> Optional[Location]:
+    def cached_location(self) -> Location | None:
         """Return the cached location (may be stale)."""
         return self._cached_location
 
     @property
-    def last_refresh(self) -> Optional[datetime]:
+    def last_refresh(self) -> datetime | None:
         """Return when the location was last refreshed."""
         return self._last_refresh
 
@@ -100,7 +101,7 @@ class Device:
 
         self._last_refresh = datetime.now(timezone.utc)
 
-    async def get_location(self, *, force: bool = False) -> Optional[Location]:
+    async def get_location(self, *, force: bool = False) -> Location | None:
         """Get the device's current location.
 
         Args:
@@ -117,8 +118,8 @@ class Device:
         self,
         *,
         limit: int = 100,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> AsyncIterator[Location]:
         """Iterate over the device's location history.
 
@@ -164,8 +165,8 @@ class Device:
     async def lock(
         self,
         *,
-        message: Optional[str] = None,
-        passcode: Optional[str] = None,
+        message: str | None = None,
+        passcode: str | None = None,
     ) -> bool:
         """Lock the device.
 
@@ -202,7 +203,7 @@ class Device:
         """
         return await self.send_command("unlock")
 
-    async def ring(self, *, duration: Optional[int] = None) -> bool:
+    async def ring(self, *, duration: int | None = None) -> bool:
         """Make the device ring/alarm.
 
         Args:
@@ -235,7 +236,7 @@ class Vehicle(Device):
 
     def __init__(
         self,
-        client: "LoJackClient",
+        client: LoJackClient,
         info: VehicleInfo,
     ) -> None:
         """Initialize the vehicle wrapper.
@@ -253,32 +254,32 @@ class Vehicle(Device):
         return self._vehicle_info
 
     @property
-    def vin(self) -> Optional[str]:
+    def vin(self) -> str | None:
         """Return the vehicle's VIN."""
         return self._vehicle_info.vin
 
     @property
-    def make(self) -> Optional[str]:
+    def make(self) -> str | None:
         """Return the vehicle's make."""
         return self._vehicle_info.make
 
     @property
-    def model(self) -> Optional[str]:
+    def model(self) -> str | None:
         """Return the vehicle's model."""
         return self._vehicle_info.model
 
     @property
-    def year(self) -> Optional[int]:
+    def year(self) -> int | None:
         """Return the vehicle's year."""
         return self._vehicle_info.year
 
     @property
-    def license_plate(self) -> Optional[str]:
+    def license_plate(self) -> str | None:
         """Return the vehicle's license plate."""
         return self._vehicle_info.license_plate
 
     @property
-    def odometer(self) -> Optional[float]:
+    def odometer(self) -> float | None:
         """Return the vehicle's odometer reading."""
         return self._vehicle_info.odometer
 

@@ -1,10 +1,11 @@
 """Tests for authentication manager."""
 
-import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from lojack_clients.auth import AuthManager, AuthArtifacts
+import pytest
+
+from lojack_clients.auth import AuthArtifacts, AuthManager
 from lojack_clients.exceptions import AuthenticationError
 
 

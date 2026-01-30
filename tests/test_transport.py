@@ -1,18 +1,17 @@
 """Tests for the transport layer."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
+import pytest
 
-from lojack_clients.transport import AiohttpTransport
 from lojack_clients.exceptions import (
+    ApiError,
     AuthenticationError,
     AuthorizationError,
-    ApiError,
     ConnectionError,
-    TimeoutError,
 )
+from lojack_clients.transport import AiohttpTransport
 
 
 class TestAiohttpTransport:

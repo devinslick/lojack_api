@@ -1,6 +1,6 @@
 """Exceptions for the LoJack client library."""
 
-from typing import Any, Optional
+from typing import Any
 
 
 class LoJackError(Exception):
@@ -29,8 +29,8 @@ class ApiError(LoJackError):
     def __init__(
         self,
         message: str = "",
-        status_code: Optional[int] = None,
-        response_body: Optional[str] = None,
+        status_code: int | None = None,
+        response_body: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
@@ -57,7 +57,7 @@ class TimeoutError(LoJackError):
 class DeviceNotFoundError(LoJackError):
     """Raised when a requested device is not found."""
 
-    def __init__(self, device_id: str, message: Optional[str] = None) -> None:
+    def __init__(self, device_id: str, message: str | None = None) -> None:
         self.device_id = device_id
         super().__init__(message or f"Device not found: {device_id}")
 
@@ -69,8 +69,8 @@ class CommandError(LoJackError):
         self,
         command: str,
         device_id: str,
-        message: Optional[str] = None,
-        reason: Optional[str] = None,
+        message: str | None = None,
+        reason: str | None = None,
     ) -> None:
         self.command = command
         self.device_id = device_id
@@ -83,7 +83,7 @@ class CommandError(LoJackError):
 class InvalidParameterError(LoJackError):
     """Raised when an invalid parameter is provided."""
 
-    def __init__(self, parameter: str, value: Any, reason: Optional[str] = None) -> None:
+    def __init__(self, parameter: str, value: Any, reason: str | None = None) -> None:
         self.parameter = parameter
         self.value = value
         self.reason = reason

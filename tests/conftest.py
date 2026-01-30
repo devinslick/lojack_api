@@ -1,12 +1,12 @@
 """Shared fixtures for tests."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from lojack_clients import LoJackClient
-from lojack_clients.transport import AiohttpTransport
+import pytest
+
 from lojack_clients.auth import AuthManager
-from lojack_clients.models import DeviceInfo, VehicleInfo, Location
+from lojack_clients.models import DeviceInfo, Location, VehicleInfo
+from lojack_clients.transport import AiohttpTransport
 
 
 @pytest.fixture
