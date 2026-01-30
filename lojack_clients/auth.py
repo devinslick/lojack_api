@@ -1,11 +1,18 @@
-"""Authentication manager for LoJack API.
+"""Authentication manager for Spireon LoJack API.
 
 Handles token-based authentication with automatic refresh and
 session resumption support for Home Assistant integrations.
+
+The Spireon LoJack API uses:
+- Basic Auth for initial token retrieval from the identity service
+- X-Nspire-Usertoken header for subsequent API calls
+- X-Nspire-Apptoken and X-Nspire-Correlationid headers on all requests
 """
 
 from __future__ import annotations
 
+import base64
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -14,6 +21,10 @@ from .exceptions import AuthenticationError
 
 if TYPE_CHECKING:
     from .transport import AiohttpTransport
+
+
+# Default app token for LoJack (systemId=23, brandId=81)
+DEFAULT_APP_TOKEN = "eyJzeXN0ZW1JZCI6MjMsImJyYW5kSWQiOjgxfQ=="
 
 
 @dataclass
@@ -61,18 +72,52 @@ class AuthArtifacts:
         )
 
 
+def get_spireon_headers(
+    app_token: str = DEFAULT_APP_TOKEN,
+    user_token: Optional[str] = None,
+    basic_auth: Optional[str] = None,
+) -> Dict[str, str]:
+    """Build headers for Spireon API requests.
+
+    Args:
+        app_token: The X-Nspire-Apptoken value.
+        user_token: Optional X-Nspire-Usertoken for authenticated requests.
+        basic_auth: Optional Basic auth string for identity requests.
+
+    Returns:
+        Dictionary of headers to use in requests.
+    """
+    headers = {
+        "X-Nspire-Apptoken": app_token,
+        "X-Nspire-Correlationid": str(uuid.uuid4()),
+    }
+    if user_token:
+        headers["X-Nspire-Usertoken"] = user_token
+    if basic_auth:
+        headers["Authorization"] = f"Basic {basic_auth}"
+    return headers
+
+
+def encode_basic_auth(username: str, password: str) -> str:
+    """Encode username and password for Basic auth."""
+    credentials = f"{username}:{password}"
+    return base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+
+
 class AuthManager:
-    """Manages authentication tokens for the LoJack API.
+    """Manages authentication tokens for the Spireon LoJack API.
 
     Features:
-    - Automatic token refresh when expired
+    - Basic Auth for initial token retrieval
+    - Automatic token refresh when expired (via re-login)
     - Session resumption via export/import of auth artifacts
-    - Support for refresh tokens if the API provides them
+    - Proper Spireon-specific headers
 
     Args:
         transport: The HTTP transport to use for auth requests.
         username: LoJack account username/email.
         password: LoJack account password.
+        app_token: The X-Nspire-Apptoken value (default: LoJack app token).
         token_refresh_margin: Seconds before expiry to trigger refresh (default: 60).
     """
 
@@ -81,15 +126,16 @@ class AuthManager:
         transport: "AiohttpTransport",
         username: Optional[str] = None,
         password: Optional[str] = None,
+        app_token: str = DEFAULT_APP_TOKEN,
         token_refresh_margin: int = 60,
     ) -> None:
         self._transport = transport
         self._username = username
         self._password = password
+        self._app_token = app_token
         self._token_refresh_margin = token_refresh_margin
 
         self._access_token: Optional[str] = None
-        self._refresh_token: Optional[str] = None
         self._expires_at: Optional[datetime] = None
         self._user_id: Optional[str] = None
 
@@ -107,6 +153,11 @@ class AuthManager:
         """Return the authenticated user ID if available."""
         return self._user_id
 
+    @property
+    def app_token(self) -> str:
+        """Return the app token used for requests."""
+        return self._app_token
+
     def import_auth_artifacts(self, artifacts: AuthArtifacts) -> None:
         """Import previously exported auth state for session resumption.
 
@@ -115,7 +166,6 @@ class AuthManager:
         """
         self._access_token = artifacts.access_token
         self._expires_at = artifacts.expires_at
-        self._refresh_token = artifacts.refresh_token
         self._user_id = artifacts.user_id
 
     def export_auth_artifacts(self) -> Optional[AuthArtifacts]:
@@ -130,15 +180,14 @@ class AuthManager:
         return AuthArtifacts(
             access_token=self._access_token,
             expires_at=self._expires_at,
-            refresh_token=self._refresh_token,
             user_id=self._user_id,
         )
 
     async def login(self) -> str:
-        """Authenticate with the API using username/password.
+        """Authenticate with the identity service using Basic Auth.
 
         Returns:
-            The access token.
+            The user token (X-Nspire-Usertoken).
 
         Raises:
             AuthenticationError: If credentials are missing or login fails.
@@ -146,109 +195,63 @@ class AuthManager:
         if not self._username or not self._password:
             raise AuthenticationError("Username and password are required for login")
 
-        payload = {
-            "username": self._username,
-            "password": self._password,
-        }
+        basic_auth = encode_basic_auth(self._username, self._password)
+        headers = get_spireon_headers(app_token=self._app_token, basic_auth=basic_auth)
 
         try:
-            data = await self._transport.request("POST", "/auth/login", json=payload)
+            data = await self._transport.request(
+                "GET", "/identity/token", headers=headers
+            )
         except Exception as e:
             raise AuthenticationError(f"Login failed: {e}") from e
 
         if not isinstance(data, dict):
             raise AuthenticationError("Invalid login response")
 
-        token_value = data.get("access_token") or data.get("token")
+        token_value = data.get("token") or data.get("access_token")
         if not token_value:
             error = data.get("error") or data.get("message") or "No token in response"
             raise AuthenticationError(f"Login failed: {error}")
 
         token: str = str(token_value)
         self._access_token = token
-        self._refresh_token = data.get("refresh_token")
-        self._user_id = data.get("user_id") or data.get("userId")
+        self._user_id = data.get("userId") or data.get("user_id")
 
-        # Parse expiration
-        expires_in = data.get("expires_in") or data.get("expiresIn")
+        # Parse expiration - tokens typically expire after some time
+        expires_in = data.get("expiresIn") or data.get("expires_in")
         if expires_in:
             try:
                 self._expires_at = datetime.now(timezone.utc) + timedelta(
                     seconds=int(expires_in)
                 )
             except (ValueError, TypeError):
-                self._expires_at = None
+                # Default to 1 hour if not specified
+                self._expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         else:
-            # Check for explicit expiration timestamp
-            expires_at = data.get("expires_at") or data.get("expiresAt")
-            if expires_at:
-                if isinstance(expires_at, (int, float)):
-                    self._expires_at = datetime.fromtimestamp(
-                        expires_at, tz=timezone.utc
-                    )
-                elif isinstance(expires_at, str):
-                    try:
-                        self._expires_at = datetime.fromisoformat(
-                            expires_at.replace("Z", "+00:00")
-                        )
-                    except ValueError:
-                        self._expires_at = None
+            # Default expiration if not provided
+            self._expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
         return token
 
     async def refresh(self) -> str:
-        """Refresh the access token using the refresh token.
+        """Refresh the access token by re-logging in.
 
-        Falls back to re-login if no refresh token is available.
+        The Spireon API doesn't have a separate refresh endpoint,
+        so we re-authenticate with credentials.
 
         Returns:
-            The new access token.
+            The new user token.
 
         Raises:
             AuthenticationError: If refresh fails.
         """
-        if not self._refresh_token:
-            # No refresh token, try re-login
-            return await self.login()
-
-        payload = {"refresh_token": self._refresh_token}
-
-        try:
-            data = await self._transport.request("POST", "/auth/refresh", json=payload)
-        except AuthenticationError:
-            # Refresh token might be invalid, try re-login
-            return await self.login()
-        except Exception as e:
-            raise AuthenticationError(f"Token refresh failed: {e}") from e
-
-        if not isinstance(data, dict):
-            return await self.login()
-
-        token_value = data.get("access_token") or data.get("token")
-        if not token_value:
-            return await self.login()
-
-        token: str = str(token_value)
-        self._access_token = token
-        if new_refresh := data.get("refresh_token"):
-            self._refresh_token = str(new_refresh)
-
-        expires_in = data.get("expires_in") or data.get("expiresIn")
-        if expires_in:
-            try:
-                self._expires_at = datetime.now(timezone.utc) + timedelta(
-                    seconds=int(expires_in)
-                )
-            except (ValueError, TypeError):
-                pass
-
-        return token
+        return await self.login()
 
     async def get_token(self) -> str:
         """Get a valid access token, refreshing if necessary.
 
         Returns:
-            A valid access token.
+            A valid user token.
 
         Raises:
             AuthenticationError: If unable to get a valid token.
@@ -264,9 +267,19 @@ class AuthManager:
 
         return self._access_token
 
+    def get_auth_headers(self) -> Dict[str, str]:
+        """Get headers for authenticated API requests.
+
+        Returns:
+            Headers dict with app token, correlation ID, and user token.
+        """
+        return get_spireon_headers(
+            app_token=self._app_token,
+            user_token=self._access_token,
+        )
+
     def clear(self) -> None:
         """Clear all authentication state."""
         self._access_token = None
-        self._refresh_token = None
         self._expires_at = None
         self._user_id = None

@@ -1,21 +1,27 @@
-"""LoJack Clients - An async Python library for the LoJack API.
+"""LoJack Clients - An async Python library for the Spireon LoJack API.
 
 This library provides a clean, async interface for interacting with
 LoJack devices. It is designed to be compatible with Home Assistant
-integrations.
+integrations and avoids the httpx dependency conflict.
 
 Example usage:
     from lojack_clients import LoJackClient
 
-    async with await LoJackClient.create(url, username, password) as client:
+    async with await LoJackClient.create(username, password) as client:
         devices = await client.list_devices()
         for device in devices:
             location = await device.get_location()
             print(f"{device.name}: {location.latitude}, {location.longitude}")
 """
 
-from .api import LoJackClient
-from .auth import AuthArtifacts, AuthManager
+from .api import IDENTITY_URL, SERVICES_URL, LoJackClient
+from .auth import (
+    DEFAULT_APP_TOKEN,
+    AuthArtifacts,
+    AuthManager,
+    encode_basic_auth,
+    get_spireon_headers,
+)
 from .device import Device, Vehicle
 from .exceptions import (
     ApiError,
@@ -31,11 +37,14 @@ from .exceptions import (
 from .models import DeviceInfo, Location, VehicleInfo
 from .transport import AiohttpTransport
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     # Main client
     "LoJackClient",
+    # API URLs
+    "IDENTITY_URL",
+    "SERVICES_URL",
     # Device wrappers
     "Device",
     "Vehicle",
@@ -46,6 +55,9 @@ __all__ = [
     # Auth
     "AuthArtifacts",
     "AuthManager",
+    "DEFAULT_APP_TOKEN",
+    "encode_basic_auth",
+    "get_spireon_headers",
     # Transport
     "AiohttpTransport",
     # Exceptions
