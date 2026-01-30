@@ -20,9 +20,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-# Add parent directory to path for local development
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from lojack_api import (
     IDENTITY_URL,
     SERVICES_URL,
@@ -31,6 +28,9 @@ from lojack_api import (
     LoJackClient,
     Vehicle,
 )
+
+# Add parent directory to path for local development
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def print_separator(title: str = "") -> None:
@@ -78,7 +78,7 @@ async def test_authentication(username: str, password: str) -> LoJackClient | No
         return None
 
 
-async def test_list_devices(client: LoJackClient) -> list:
+async def test_list_devices(client: LoJackClient) -> list[Device]:
     """Test listing all devices and show raw data."""
     print_separator("LIST DEVICES TEST")
 
@@ -120,6 +120,7 @@ async def test_list_devices(client: LoJackClient) -> list:
     except Exception as e:
         print(f"\n[ERROR] Failed to list devices: {type(e).__name__}: {e}")
         import traceback
+
         traceback.print_exc()
         return []
 
@@ -139,7 +140,11 @@ async def test_device_locations(client: LoJackClient, device: Device) -> None:
                 "GET", "/events", params=params, headers=headers
             )
             print("Raw /events response:")
-            print_dict(events_data if isinstance(events_data, dict) else {"response": events_data})
+            print_dict(
+                events_data
+                if isinstance(events_data, dict)
+                else {"response": events_data}
+            )
         except Exception as e:
             print(f"  /events failed: {e}")
 
@@ -150,7 +155,9 @@ async def test_device_locations(client: LoJackClient, device: Device) -> None:
                 "GET", f"/assets/{device.id}", headers=headers
             )
             print("Raw /assets/{id} response:")
-            print_dict(asset_data if isinstance(asset_data, dict) else {"response": asset_data})
+            print_dict(
+                asset_data if isinstance(asset_data, dict) else {"response": asset_data}
+            )
         except Exception as e:
             print(f"  /assets/{{id}} failed: {e}")
 
@@ -161,7 +168,11 @@ async def test_device_locations(client: LoJackClient, device: Device) -> None:
                 "GET", f"/assets/{device.id}/location", headers=headers
             )
             print("Raw /assets/{id}/location response:")
-            print_dict(location_data if isinstance(location_data, dict) else {"response": location_data})
+            print_dict(
+                location_data
+                if isinstance(location_data, dict)
+                else {"response": location_data}
+            )
         except Exception as e:
             print(f"  /assets/{{id}}/location failed: {e}")
 
@@ -169,10 +180,17 @@ async def test_device_locations(client: LoJackClient, device: Device) -> None:
         print("\n--- Testing /assets/{id}/locations endpoint ---")
         try:
             locations_data = await client._services_transport.request(
-                "GET", f"/assets/{device.id}/locations", params={"limit": 10}, headers=headers
+                "GET",
+                f"/assets/{device.id}/locations",
+                params={"limit": 10},
+                headers=headers,
             )
             print("Raw /assets/{id}/locations response:")
-            print_dict(locations_data if isinstance(locations_data, dict) else {"response": locations_data})
+            print_dict(
+                locations_data
+                if isinstance(locations_data, dict)
+                else {"response": locations_data}
+            )
         except Exception as e:
             print(f"  /assets/{{id}}/locations failed: {e}")
 
@@ -188,10 +206,17 @@ async def test_device_locations(client: LoJackClient, device: Device) -> None:
                 "limit": 10,
             }
             history_data = await client._services_transport.request(
-                "GET", f"/assets/{device.id}/history", params=history_params, headers=headers
+                "GET",
+                f"/assets/{device.id}/history",
+                params=history_params,
+                headers=headers,
             )
             print("Raw /assets/{id}/history response:")
-            print_dict(history_data if isinstance(history_data, dict) else {"response": history_data})
+            print_dict(
+                history_data
+                if isinstance(history_data, dict)
+                else {"response": history_data}
+            )
         except Exception as e:
             print(f"  /assets/{{id}}/history failed: {e}")
 
@@ -224,6 +249,7 @@ async def test_device_locations(client: LoJackClient, device: Device) -> None:
     except Exception as e:
         print(f"\n[ERROR] Location test failed: {type(e).__name__}: {e}")
         import traceback
+
         traceback.print_exc()
 
 

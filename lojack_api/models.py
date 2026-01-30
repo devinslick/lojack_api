@@ -237,7 +237,9 @@ class DeviceInfo:
         device = cls(
             id=data.get("id") or data.get("device_id") or data.get("assetId") or "",
             name=data.get("name") or attrs.get("name") or data.get("device_name"),
-            device_type=data.get("type") or attrs.get("type") or data.get("device_type"),
+            device_type=data.get("type")
+            or attrs.get("type")
+            or data.get("device_type"),
             status=(
                 status_obj.get("status")
                 if isinstance(status_obj, dict)

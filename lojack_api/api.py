@@ -407,6 +407,7 @@ class LoJackClient:
             ts = data.get("locationLastReported")
             if ts:
                 from .models import _parse_timestamp
+
                 loc.timestamp = _parse_timestamp(ts)
 
         # Add speed from asset

@@ -160,7 +160,9 @@ class AiohttpTransport:
             return AuthenticationError(message or "Authentication failed")
         if status == 403:
             return AuthorizationError(message or "Access denied")
-        return ApiError(message or f"HTTP {status}", status_code=status, response_body=body)
+        return ApiError(
+            message or f"HTTP {status}", status_code=status, response_body=body
+        )
 
     async def close(self) -> None:
         """Close the transport and release resources.

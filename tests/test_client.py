@@ -158,7 +158,9 @@ class TestLoJackClientDevices:
         client = LoJackClient()
         client._auth = MagicMock()
         client._auth.get_token = AsyncMock(return_value="token")
-        client._auth.get_auth_headers = MagicMock(return_value={"X-Nspire-Usertoken": "token"})
+        client._auth.get_auth_headers = MagicMock(
+            return_value={"X-Nspire-Usertoken": "token"}
+        )
         client._services_transport = MagicMock()
         client._services_transport.request = AsyncMock()
         return client
@@ -227,7 +229,9 @@ class TestLoJackClientDevices:
     async def test_get_device(self, client):
         """Test getting a single device."""
         client._services_transport.request.return_value = {
-            "id": "dev-1", "name": "Device 1", "type": "tracker"
+            "id": "dev-1",
+            "name": "Device 1",
+            "type": "tracker",
         }
 
         device = await client.get_device("dev-1")
@@ -255,7 +259,9 @@ class TestLoJackClientLocations:
         client = LoJackClient()
         client._auth = MagicMock()
         client._auth.get_token = AsyncMock(return_value="token")
-        client._auth.get_auth_headers = MagicMock(return_value={"X-Nspire-Usertoken": "token"})
+        client._auth.get_auth_headers = MagicMock(
+            return_value={"X-Nspire-Usertoken": "token"}
+        )
         client._services_transport = MagicMock()
         client._services_transport.request = AsyncMock()
         return client
@@ -306,7 +312,9 @@ class TestLoJackClientCommands:
         client = LoJackClient()
         client._auth = MagicMock()
         client._auth.get_token = AsyncMock(return_value="token")
-        client._auth.get_auth_headers = MagicMock(return_value={"X-Nspire-Usertoken": "token"})
+        client._auth.get_auth_headers = MagicMock(
+            return_value={"X-Nspire-Usertoken": "token"}
+        )
         client._services_transport = MagicMock()
         client._services_transport.request = AsyncMock()
         return client
@@ -314,7 +322,10 @@ class TestLoJackClientCommands:
     @pytest.mark.asyncio
     async def test_send_command_success(self, client):
         """Test sending a command successfully."""
-        client._services_transport.request.return_value = {"id": "cmd-123", "status": "PENDING"}
+        client._services_transport.request.return_value = {
+            "id": "cmd-123",
+            "status": "PENDING",
+        }
 
         result = await client.send_command("dev-1", "locate")
 

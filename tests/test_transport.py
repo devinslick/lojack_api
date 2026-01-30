@@ -93,10 +93,11 @@ class TestTransportRequest:
 
         mock_session = MagicMock(spec=aiohttp.ClientSession)
         mock_session.closed = False
-        mock_session.request = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_response),
-            __aexit__=AsyncMock()
-        ))
+        mock_session.request = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock()
+            )
+        )
 
         # Pass the mock session to the constructor so it's treated as external
         transport = AiohttpTransport("http://example.com", session=mock_session)
@@ -116,10 +117,11 @@ class TestTransportRequest:
 
         mock_session = MagicMock(spec=aiohttp.ClientSession)
         mock_session.closed = False
-        mock_session.request = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_response),
-            __aexit__=AsyncMock()
-        ))
+        mock_session.request = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock()
+            )
+        )
 
         # Pass the mock session to the constructor so it's treated as external
         transport = AiohttpTransport("http://example.com", session=mock_session)

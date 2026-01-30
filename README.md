@@ -2,6 +2,10 @@
 
 An async Python client library for the Spireon LoJack API, designed for Home Assistant integrations.
 
+[![Tests](https://github.com/devinslick/lojack_api/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/devinslick/lojack_api/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/devinslick/lojack_api/branch/main/graph/badge.svg?token=K97PlD4IU4)](https://codecov.io/gh/devinslick/lojack_api)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/lojack_api)](https://pypi.org/project/lojack_api/)
+
 ## Features
 
 - **Async-first design** - Built with `asyncio` and `aiohttp` for non-blocking I/O
