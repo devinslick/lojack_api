@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lojack_api"
-version = "0.6.0"
+version = "0.6.1"
 description = "An async Python client library for the LoJack API, designed for Home Assistant integrations."
 readme = "README.md"
 authors = [{ name = "LoJack Clients Contributors" }]

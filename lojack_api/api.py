@@ -16,7 +16,7 @@ import aiohttp
 from .auth import DEFAULT_APP_TOKEN, AuthArtifacts, AuthManager
 from .device import Device, Vehicle
 from .exceptions import ApiError, DeviceNotFoundError
-from .models import DeviceInfo, Location, VehicleInfo
+from .models import DeviceInfo, Location, VehicleInfo, _parse_timestamp
 from .transport import AiohttpTransport
 
 # Default Spireon API endpoints
@@ -406,8 +406,6 @@ class LoJackClient:
         if not loc.timestamp:
             ts = data.get("locationLastReported")
             if ts:
-                from .models import _parse_timestamp
-
                 loc.timestamp = _parse_timestamp(ts)
 
         # Add speed from asset

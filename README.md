@@ -210,7 +210,7 @@ await vehicle.flash_lights()
 ```python
 from lojack_api import Location, DeviceInfo, VehicleInfo
 
-# Location
+# Location - Core fields
 location.latitude   # Optional[float]
 location.longitude  # Optional[float]
 location.timestamp  # Optional[datetime]
@@ -218,7 +218,19 @@ location.accuracy   # Optional[float]
 location.speed      # Optional[float]
 location.heading    # Optional[float]
 location.address    # Optional[str]
-location.raw        # Dict[str, Any]  # Original API response
+
+# Location - Extended telemetry (from events)
+location.odometer        # Optional[float] - Vehicle odometer reading
+location.battery_voltage # Optional[float] - Battery voltage
+location.engine_hours    # Optional[float] - Engine hours
+location.distance_driven # Optional[float] - Total distance driven
+location.signal_strength # Optional[float] - Signal strength (0.0 to 1.0)
+location.gps_fix_quality # Optional[str] - GPS quality (e.g., "GOOD", "POOR")
+location.event_type      # Optional[str] - Event type (e.g., "SLEEP_ENTER")
+location.event_id        # Optional[str] - Unique event identifier
+
+# Location - Raw data
+location.raw        # Dict[str, Any] - Original API response
 ```
 
 ### Exceptions

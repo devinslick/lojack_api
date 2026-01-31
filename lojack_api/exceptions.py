@@ -14,13 +14,9 @@ class LoJackError(Exception):
 class AuthenticationError(LoJackError):
     """Raised when authentication fails (invalid credentials, expired token, etc.)."""
 
-    pass
-
 
 class AuthorizationError(LoJackError):
     """Raised when the user is not authorized to perform an action."""
-
-    pass
 
 
 class ApiError(LoJackError):
@@ -42,16 +38,22 @@ class ApiError(LoJackError):
         return self.message
 
 
-class ConnectionError(LoJackError):
-    """Raised when a connection to the API cannot be established."""
+class ConnectionError(LoJackError):  # noqa: A001
+    """Raised when a connection to the API cannot be established.
 
-    pass
+    Note: This intentionally shadows the built-in ConnectionError to provide
+    a LoJack-specific exception that inherits from LoJackError, allowing
+    callers to catch all library exceptions with a single base class.
+    """
 
 
-class TimeoutError(LoJackError):
-    """Raised when an API request times out."""
+class TimeoutError(LoJackError):  # noqa: A001
+    """Raised when an API request times out.
 
-    pass
+    Note: This intentionally shadows the built-in TimeoutError to provide
+    a LoJack-specific exception that inherits from LoJackError, allowing
+    callers to catch all library exceptions with a single base class.
+    """
 
 
 class DeviceNotFoundError(LoJackError):
