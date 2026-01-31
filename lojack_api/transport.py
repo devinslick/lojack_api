@@ -59,9 +59,13 @@ class AiohttpTransport:
             raise ConnectionError("Transport has been closed")
 
         if self._session is None or self._session.closed:
-            # Use custom SSL context if provided, otherwise use default (secure) SSL
-            # Note: passing ssl=False would disable certificate verification entirely
-            connector = aiohttp.TCPConnector(ssl=self._ssl_context)
+            # Only pass ssl parameter if a custom context is provided.
+            # Otherwise, let aiohttp use its default secure SSL verification.
+            # Note: passing ssl=False would disable certificate verification entirely.
+            if self._ssl_context is not None:
+                connector = aiohttp.TCPConnector(ssl=self._ssl_context)
+            else:
+                connector = aiohttp.TCPConnector()
             self._session = aiohttp.ClientSession(
                 timeout=self._timeout,
                 connector=connector,
