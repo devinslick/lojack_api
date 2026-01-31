@@ -16,6 +16,26 @@ class Location:
     """A single location point from the API.
 
     Includes both basic location data and extended telemetry from events.
+
+    Attributes:
+        latitude: Latitude in decimal degrees.
+        longitude: Longitude in decimal degrees.
+        timestamp: When the location was recorded.
+        accuracy: GPS accuracy in meters. Derived from HDOP or GPS fix quality.
+            For Home Assistant device_tracker integration, this value is used
+            directly as gps_accuracy.
+        speed: Speed in the units provided by the API (typically mph or km/h).
+        heading: Heading in degrees (0-360).
+        address: Human-readable address if available.
+        odometer: Vehicle odometer reading.
+        battery_voltage: Battery voltage.
+        engine_hours: Engine hours.
+        distance_driven: Total distance driven.
+        signal_strength: Signal strength (0.0 to 1.0).
+        gps_fix_quality: Raw GPS quality string from API (e.g., "GOOD", "POOR").
+        event_type: Event type string (e.g., "SLEEP_ENTER").
+        event_id: Unique event identifier.
+        raw: Original API response data.
     """
 
     # Core location fields
@@ -61,7 +81,9 @@ class Location:
             or coords.get("longitude")
             or coords.get("lng")
         )
-        loc.accuracy = data.get("accuracy") or data.get("hdop")
+        loc.accuracy = _parse_gps_accuracy(
+            data.get("accuracy"), data.get("hdop"), data.get("gpsFixQuality")
+        )
         loc.speed = data.get("speed")
         loc.heading = data.get("heading") or data.get("bearing") or data.get("course")
         loc.address = data.get("address") or data.get("formattedAddress")
@@ -132,7 +154,11 @@ class Location:
             or event_data.get("bearing")
             or event_data.get("course")
         )
-        loc.accuracy = event_data.get("accuracy") or event_data.get("hdop")
+        loc.accuracy = _parse_gps_accuracy(
+            event_data.get("accuracy"),
+            event_data.get("hdop"),
+            event_data.get("gpsFixQuality"),
+        )
 
         # Parse address - can be string or nested object
         addr = location_data.get("address") or event_data.get("address")
@@ -336,6 +362,90 @@ class VehicleInfo(DeviceInfo):
             vehicle.last_seen = _parse_timestamp(ts)
 
         return vehicle
+
+
+def _parse_gps_accuracy(
+    accuracy: Any, hdop: Any = None, gps_quality: str | None = None
+) -> float | None:
+    """Parse GPS accuracy from various API formats and convert to meters.
+
+    Home Assistant's device_tracker expects gps_accuracy in meters. This function
+    handles the various formats the Spireon API may return:
+
+    - Numeric accuracy value (if > 15, assumed meters; otherwise HDOP * 5)
+    - Numeric HDOP value (multiplied by ~5 to get approximate meters)
+    - GPS quality string like "GOOD", "POOR" (mapped to reasonable meter values)
+
+    The threshold of 15 distinguishes HDOP values (typically 1-15) from meter
+    values (typically 10-100+). HDOP > 15 would indicate very poor GPS quality
+    unlikely to be reported.
+
+    Args:
+        accuracy: Raw accuracy value from API (may be float, int, str, or None).
+        hdop: HDOP value if provided separately.
+        gps_quality: GPS fix quality string (e.g., "GOOD", "POOR", "EXCELLENT").
+
+    Returns:
+        GPS accuracy in meters, or None if no accuracy info available.
+    """
+    # GPS quality string to meters mapping
+    # These are reasonable approximations for Home Assistant
+    quality_to_meters: dict[str, float] = {
+        "EXCELLENT": 5.0,
+        "GOOD": 10.0,
+        "MODERATE": 25.0,
+        "FAIR": 25.0,
+        "POOR": 50.0,
+        "BAD": 100.0,
+        "VERY_POOR": 100.0,
+        "NO_FIX": 200.0,
+    }
+
+    # HDOP threshold - values above this are assumed to be meters already
+    # HDOP typically ranges from 1 (excellent) to 10-15 (poor)
+    HDOP_THRESHOLD = 15.0
+
+    # Try explicit HDOP field first (always convert)
+    if hdop is not None:
+        if isinstance(hdop, (int, float)):
+            return float(hdop) * 5.0
+        if isinstance(hdop, str):
+            try:
+                return float(hdop) * 5.0
+            except ValueError:
+                pass
+
+    # Try accuracy field
+    if accuracy is not None:
+        if isinstance(accuracy, (int, float)):
+            val = float(accuracy)
+            # If value > threshold, assume it's already in meters
+            # Otherwise treat as HDOP and convert
+            if val > HDOP_THRESHOLD:
+                return val
+            return val * 5.0
+
+        # If it's a string, check if it's numeric or a quality indicator
+        if isinstance(accuracy, str):
+            # Try parsing as a number first
+            try:
+                val = float(accuracy)
+                if val > HDOP_THRESHOLD:
+                    return val
+                return val * 5.0
+            except ValueError:
+                # It's a quality string - look it up
+                quality_upper = accuracy.upper().replace(" ", "_")
+                if quality_upper in quality_to_meters:
+                    return quality_to_meters[quality_upper]
+
+    # Fall back to gps_quality if provided
+    if gps_quality:
+        quality_upper = gps_quality.upper().replace(" ", "_")
+        if quality_upper in quality_to_meters:
+            return quality_to_meters[quality_upper]
+
+    return None
 
 
 def _parse_timestamp(ts: Any) -> datetime | None:

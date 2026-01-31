@@ -61,11 +61,15 @@ def sample_vehicle_data():
 
 @pytest.fixture
 def sample_location_data():
-    """Sample location data from API."""
+    """Sample location data from API.
+
+    Note: accuracy of 25.0 is > 15, so it's treated as meters directly.
+    Values <= 15 are treated as HDOP and multiplied by 5.
+    """
     return {
         "latitude": 40.7128,
         "longitude": -74.0060,
-        "accuracy": 10.5,
+        "accuracy": 25.0,  # Treated as meters (> HDOP threshold of 15)
         "speed": 25.0,
         "heading": 180,
         "timestamp": "2024-01-15T10:30:00Z",
