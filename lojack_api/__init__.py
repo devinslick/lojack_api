@@ -37,7 +37,7 @@ from .exceptions import (
 from .models import DeviceInfo, Location, VehicleInfo
 from .transport import AiohttpTransport
 
-__version__ = "0.6.2"
+__version__ = "0.6.3"
 
 __all__ = [
     # Main client
