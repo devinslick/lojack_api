@@ -2,7 +2,71 @@
 
 from datetime import datetime, timezone
 
-from lojack_api.models import DeviceInfo, Location, VehicleInfo, _parse_timestamp
+from lojack_api.models import (
+    DeviceInfo,
+    Location,
+    VehicleInfo,
+    _parse_gps_accuracy,
+    _parse_timestamp,
+)
+
+
+class TestParseGpsAccuracy:
+    """Tests for GPS accuracy parsing and conversion to meters."""
+
+    def test_hdop_conversion(self):
+        """Test HDOP values are converted to meters (multiplied by 5)."""
+        # HDOP of 2 should give 10 meters
+        assert _parse_gps_accuracy(2.0) == 10.0
+        # HDOP of 1 should give 5 meters
+        assert _parse_gps_accuracy(1.0) == 5.0
+
+    def test_large_value_treated_as_meters(self):
+        """Test values > 15 are treated as meters directly."""
+        assert _parse_gps_accuracy(25.0) == 25.0
+        assert _parse_gps_accuracy(100.0) == 100.0
+
+    def test_explicit_hdop_field(self):
+        """Test explicit hdop parameter is always converted."""
+        # Even if accuracy is None, hdop should work
+        assert _parse_gps_accuracy(None, hdop=2.0) == 10.0
+        # hdop takes precedence format-wise (always converted)
+        assert _parse_gps_accuracy(None, hdop=20.0) == 100.0
+
+    def test_gps_quality_string_good(self):
+        """Test GOOD quality string maps to 10 meters."""
+        assert _parse_gps_accuracy("GOOD") == 10.0
+        assert _parse_gps_accuracy("good") == 10.0
+
+    def test_gps_quality_string_poor(self):
+        """Test POOR quality string maps to 50 meters."""
+        assert _parse_gps_accuracy("POOR") == 50.0
+
+    def test_gps_quality_string_excellent(self):
+        """Test EXCELLENT quality string maps to 5 meters."""
+        assert _parse_gps_accuracy("EXCELLENT") == 5.0
+
+    def test_gps_quality_fallback(self):
+        """Test gps_quality parameter used as fallback."""
+        assert _parse_gps_accuracy(None, None, "GOOD") == 10.0
+        assert _parse_gps_accuracy(None, None, "POOR") == 50.0
+
+    def test_numeric_string(self):
+        """Test numeric strings are parsed correctly."""
+        assert _parse_gps_accuracy("2.0") == 10.0  # Treated as HDOP
+        assert _parse_gps_accuracy("25.0") == 25.0  # Treated as meters
+
+    def test_none_returns_none(self):
+        """Test that all None inputs return None."""
+        assert _parse_gps_accuracy(None) is None
+        assert _parse_gps_accuracy(None, None, None) is None
+
+    def test_unknown_quality_string(self):
+        """Test unknown quality strings fall through to gps_quality param."""
+        # Unknown string in accuracy, but valid gps_quality
+        assert _parse_gps_accuracy("UNKNOWN", None, "GOOD") == 10.0
+        # Unknown string everywhere returns None
+        assert _parse_gps_accuracy("UNKNOWN", None, "UNKNOWN") is None
 
 
 class TestParseTimestamp:
@@ -57,7 +121,7 @@ class TestLocation:
         loc = Location.from_api(sample_location_data)
         assert loc.latitude == 40.7128
         assert loc.longitude == -74.0060
-        assert loc.accuracy == 10.5
+        assert loc.accuracy == 25.0  # > 15, so treated as meters directly
         assert loc.speed == 25.0
         assert loc.heading == 180
         assert loc.address == "123 Main St, New York, NY"

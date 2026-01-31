@@ -214,10 +214,16 @@ from lojack_api import Location, DeviceInfo, VehicleInfo
 location.latitude   # Optional[float]
 location.longitude  # Optional[float]
 location.timestamp  # Optional[datetime]
-location.accuracy   # Optional[float]
+location.accuracy   # Optional[float] - GPS accuracy in METERS (for HA gps_accuracy)
 location.speed      # Optional[float]
 location.heading    # Optional[float]
 location.address    # Optional[str]
+
+# Note on accuracy: The API may return HDOP values or quality strings.
+# These are automatically converted to meters for Home Assistant compatibility:
+# - HDOP values (1-15) are multiplied by 5 to get approximate meters
+# - Quality strings ("GOOD", "POOR", etc.) are mapped to reasonable meter values
+# - Values > 15 are assumed to already be in meters
 
 # Location - Extended telemetry (from events)
 location.odometer        # Optional[float] - Vehicle odometer reading
