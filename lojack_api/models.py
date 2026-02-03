@@ -405,13 +405,18 @@ def _parse_gps_accuracy(
     # HDOP typically ranges from 1 (excellent) to 10-15 (poor)
     HDOP_THRESHOLD = 15.0
 
-    # Try explicit HDOP field first (always convert)
+    # Try explicit HDOP field first (always convert), but ignore
+    # non-positive values which indicate missing/invalid HDOP.
     if hdop is not None:
         if isinstance(hdop, (int, float)):
-            return float(hdop) * 5.0
+            try_val = float(hdop)
+            if try_val > 0.0:
+                return try_val * 5.0
         if isinstance(hdop, str):
             try:
-                return float(hdop) * 5.0
+                try_val = float(hdop)
+                if try_val > 0.0:
+                    return try_val * 5.0
             except ValueError:
                 pass
 
@@ -419,6 +424,9 @@ def _parse_gps_accuracy(
     if accuracy is not None:
         if isinstance(accuracy, (int, float)):
             val = float(accuracy)
+            # Ignore non-positive values which likely mean missing data
+            if val <= 0.0:
+                return None
             # If value > threshold, assume it's already in meters
             # Otherwise treat as HDOP and convert
             if val > HDOP_THRESHOLD:
@@ -430,6 +438,8 @@ def _parse_gps_accuracy(
             # Try parsing as a number first
             try:
                 val = float(accuracy)
+                if val <= 0.0:
+                    return None
                 if val > HDOP_THRESHOLD:
                     return val
                 return val * 5.0

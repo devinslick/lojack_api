@@ -68,6 +68,16 @@ class TestParseGpsAccuracy:
         # Unknown string everywhere returns None
         assert _parse_gps_accuracy("UNKNOWN", None, "UNKNOWN") is None
 
+    def test_zero_and_negative_values_return_none(self):
+        """Zero or negative HDOP/accuracy should be treated as missing."""
+        # Explicit hdop of 0 should be ignored
+        assert _parse_gps_accuracy(None, hdop=0) is None
+        # Numeric accuracy of 0 should be ignored
+        assert _parse_gps_accuracy(0) is None
+        # Negative values should also be ignored
+        assert _parse_gps_accuracy(-1) is None
+        assert _parse_gps_accuracy(None, hdop="-2") is None
+
 
 class TestParseTimestamp:
     """Tests for timestamp parsing."""
