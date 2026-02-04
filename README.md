@@ -110,53 +110,65 @@ async def vehicle_example(client):
             print(f"  Make: {device.make} {device.model} ({device.year})")
 ```
 
-### Device Commands
+### Requesting Fresh Location Data
+
+The Spireon REST API may return stale location data (30-76+ minutes old) because
+devices report periodically, not continuously. Two methods are available to
+request on-demand location updates:
+
+#### Method Comparison
+
+| Method | Returns | Use Case |
+|--------|---------|----------|
+| `request_location_update()` | `bool` | Fire-and-forget; scripts, simple polling |
+| `request_fresh_location()` | `datetime \| None` | Non-blocking with baseline; Home Assistant |
+
+#### `request_location_update()` -> bool
+
+Sends a "locate" command to the device. Returns `True` if the command was
+accepted by the API. This is a fire-and-forget method - you must poll
+separately to detect when fresh data arrives.
 
 ```python
-# Request location update
-await device.request_location_update()
-
-# Get location history
-async for location in device.get_history(limit=100):
-    print(f"{location.timestamp}: {location.latitude}, {location.longitude}")
+# Simple usage - send command and poll manually
+success = await device.request_location_update()
+if success:
+    await asyncio.sleep(30)  # Wait for device to respond
+    location = await device.get_location(force=True)
 ```
 
-### Handling Stale Location Data
+#### `request_fresh_location()` -> datetime | None
 
-The Spireon REST API may return stale location data (30-76+ minutes old). This is
-because devices report location periodically, not continuously. The mobile app
-gets fresh data by sending a "locate" command to request an on-demand update.
-
-#### For Home Assistant Integrations (Non-blocking)
-
-Use the non-blocking pattern that works with HA's coordinator:
+Sends a "locate" command and returns the current location timestamp as a
+baseline for comparison. This is the recommended method for Home Assistant
+integrations because it's non-blocking and provides a reference point to
+detect when fresh data arrives.
 
 ```python
 from datetime import datetime, timezone
 
-# In a service call or button handler - request fresh location
-baseline_ts = await device.request_fresh_location()  # Sends "locate", returns immediately
+# In a service call or button handler
+baseline_ts = await device.request_fresh_location()
 
-# In your DataUpdateCoordinator's _async_update_data method:
+# Later, in your DataUpdateCoordinator's _async_update_data:
 location = await device.get_location(force=True)
 if location and location.timestamp:
+    # Check if we received fresh data since the locate command
+    if baseline_ts and location.timestamp > baseline_ts:
+        print("Fresh location received!")
     age = (datetime.now(timezone.utc) - location.timestamp).total_seconds()
-    # Fresh data typically arrives within 30-60 seconds after locate command
 ```
 
-The `request_fresh_location()` method:
-- Sends the "locate" command to the device
-- Returns the baseline timestamp immediately (no blocking)
-- Device responds asynchronously; fresh data appears in subsequent polls
+**Returns:**
+- `datetime` - The location timestamp before the locate command was sent
+- `None` - If no prior location was available
 
-#### For Scripts and CLI Tools
-
-For non-HA use cases where blocking is acceptable:
+#### Location History
 
 ```python
-await device.request_location_update()  # Sends "locate" command
-await asyncio.sleep(30)  # Wait for device to respond
-location = await device.get_location(force=True)  # Fetch updated location
+# Get location history
+async for location in device.get_history(limit=100):
+    print(f"{location.timestamp}: {location.latitude}, {location.longitude}")
 ```
 
 #### Troubleshooting Script
@@ -219,15 +231,17 @@ device.last_seen     # Optional[datetime]
 device.cached_location  # Optional[Location]
 
 # Methods
-await device.refresh(force=True)
-location = await device.get_location(force=False)
-baseline_ts = await device.request_fresh_location()  # Non-blocking locate + baseline
-async for loc in device.get_history(limit=100):
+await device.refresh(force=True)              # Refresh cached location from API
+location = await device.get_location(force=False)  # Get location (from cache or API)
+async for loc in device.get_history(limit=100):    # Iterate location history
     ...
-await device.request_location_update()  # Fire-and-forget locate command
+
+# Location update methods
+success = await device.request_location_update()   # bool - fire-and-forget locate
+baseline = await device.request_fresh_location()   # datetime|None - locate + baseline
 
 # Properties
-device.location_timestamp  # Cached location timestamp for freshness checks
+device.location_timestamp  # datetime|None - cached location's timestamp
 ```
 
 ### Vehicle (extends Device)
