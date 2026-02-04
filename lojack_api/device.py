@@ -11,7 +11,14 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from .models import DeviceInfo, Location, VehicleInfo
+from .models import (
+    DeviceInfo,
+    Geofence,
+    Location,
+    MaintenanceSchedule,
+    RepairOrder,
+    VehicleInfo,
+)
 
 if TYPE_CHECKING:
     from .api import LoJackClient
@@ -271,7 +278,7 @@ class Device:
             color=color,
         )
 
-    async def list_geofences(self) -> list:
+    async def list_geofences(self) -> list[Geofence]:
         """List all geofences for this device.
 
         Returns:
@@ -279,7 +286,7 @@ class Device:
         """
         return await self._client.list_geofences(self.id)
 
-    async def get_geofence(self, geofence_id: str):
+    async def get_geofence(self, geofence_id: str) -> Geofence | None:
         """Get a specific geofence.
 
         Args:
@@ -298,7 +305,7 @@ class Device:
         longitude: float,
         radius: float = 100.0,
         address: str | None = None,
-    ):
+    ) -> Geofence | None:
         """Create a new geofence for this device.
 
         Args:
@@ -463,7 +470,7 @@ class Vehicle(Device):
             odometer=odometer,
         )
 
-    async def get_maintenance_schedule(self):
+    async def get_maintenance_schedule(self) -> MaintenanceSchedule | None:
         """Get the maintenance schedule for this vehicle.
 
         Requires the vehicle to have a VIN.
@@ -475,7 +482,7 @@ class Vehicle(Device):
             return None
         return await self._client.get_maintenance_schedule(self.vin)
 
-    async def get_repair_orders(self):
+    async def get_repair_orders(self) -> list[RepairOrder]:
         """Get repair orders for this vehicle.
 
         Returns:
