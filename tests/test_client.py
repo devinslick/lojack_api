@@ -832,8 +832,12 @@ class TestLoJackClientLocationsExtended:
 
         call_args = client._services_transport.request.call_args
         params = call_args[1]["params"]
-        # Check times were passed
-        assert "startTime" in params or "start" in params or call_args is not None
+        # Verify the correct parameter names are used
+        assert "startDate" in params, "Expected 'startDate' parameter"
+        assert "endDate" in params, "Expected 'endDate' parameter"
+        # Verify the format matches Spireon's expected format
+        assert params["startDate"] == "2024-01-01T00:00:00.000+0000"
+        assert params["endDate"] == "2024-01-15T00:00:00.000+0000"
 
     @pytest.mark.asyncio
     async def test_get_locations_with_events_key(self, client):
