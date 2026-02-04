@@ -170,6 +170,39 @@ class Device:
         """
         return await self.send_command("locate")
 
+    async def lock(self) -> bool:
+        """Lock the device (if supported).
+
+        Returns:
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
+        """
+        return await self.send_command("lock")
+
+    async def unlock(self) -> bool:
+        """Unlock the device (if supported).
+
+        Returns:
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
+        """
+        return await self.send_command("unlock")
+
+    async def ring(self) -> bool:
+        """Sound the device's alarm/ringer (if supported).
+
+        Returns:
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
+        """
+        return await self.send_command("ring")
+
     async def request_fresh_location(self) -> datetime | None:
         """Request a fresh location update from the device (non-blocking).
 
@@ -452,6 +485,50 @@ class Vehicle(Device):
             vin=self.vin,
             asset_id=self.id,
         )
+
+    async def start_engine(self) -> bool:
+        """Remote start the vehicle's engine (if supported).
+
+        Returns:
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
+        """
+        return await self.send_command("start")
+
+    async def stop_engine(self) -> bool:
+        """Remote stop the vehicle's engine (if supported).
+
+        Returns:
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
+        """
+        return await self.send_command("stop")
+
+    async def honk_horn(self) -> bool:
+        """Honk the vehicle's horn (if supported).
+
+        Returns:
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
+        """
+        return await self.send_command("honk")
+
+    async def flash_lights(self) -> bool:
+        """Flash the vehicle's lights (if supported).
+
+        Returns:
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
+        """
+        return await self.send_command("flash")
 
     def __repr__(self) -> str:
         return f"Vehicle(id={self.id!r}, name={self.name!r}, vin={self.vin!r})"

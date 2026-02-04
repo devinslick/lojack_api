@@ -231,6 +231,27 @@ class TestDeviceLocationMethods:
         mock_client.send_command.assert_called_once_with(device.id, "locate")
 
     @pytest.mark.asyncio
+    async def test_lock(self, device, mock_client):
+        """Test lock command."""
+        result = await device.lock()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(device.id, "lock")
+
+    @pytest.mark.asyncio
+    async def test_unlock(self, device, mock_client):
+        """Test unlock command."""
+        result = await device.unlock()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(device.id, "unlock")
+
+    @pytest.mark.asyncio
+    async def test_ring(self, device, mock_client):
+        """Test ring command."""
+        result = await device.ring()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(device.id, "ring")
+
+    @pytest.mark.asyncio
     async def test_request_fresh_location(self, device, mock_client, location):
         """Test requesting fresh location."""
         mock_client.get_current_location.return_value = location
@@ -372,6 +393,34 @@ class TestVehicle:
         """Test odometer property."""
         vehicle_info.odometer = 50000.0
         assert vehicle.odometer == 50000.0
+
+    @pytest.mark.asyncio
+    async def test_start_engine(self, vehicle, mock_client):
+        """Test start engine command."""
+        result = await vehicle.start_engine()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(vehicle.id, "start")
+
+    @pytest.mark.asyncio
+    async def test_stop_engine(self, vehicle, mock_client):
+        """Test stop engine command."""
+        result = await vehicle.stop_engine()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(vehicle.id, "stop")
+
+    @pytest.mark.asyncio
+    async def test_honk_horn(self, vehicle, mock_client):
+        """Test honk horn command."""
+        result = await vehicle.honk_horn()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(vehicle.id, "honk")
+
+    @pytest.mark.asyncio
+    async def test_flash_lights(self, vehicle, mock_client):
+        """Test flash lights command."""
+        result = await vehicle.flash_lights()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(vehicle.id, "flash")
 
 
 class TestDeviceProperties:
