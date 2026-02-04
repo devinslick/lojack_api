@@ -233,6 +233,55 @@ await vehicle.update(
 )
 ```
 
+### Maintenance Schedules (Vehicles)
+
+Get maintenance schedule information for vehicles with a VIN:
+
+```python
+# Get maintenance schedule
+schedule = await vehicle.get_maintenance_schedule()
+if schedule:
+    print(f"Maintenance items for VIN {schedule.vin}:")
+    for item in schedule.items:
+        print(f"  {item.name}: {item.severity}")
+        if item.mileage_due:
+            print(f"    Due at: {item.mileage_due} miles")
+        if item.action:
+            print(f"    Action: {item.action}")
+```
+
+### Repair Orders (Vehicles)
+
+Get repair order history for vehicles:
+
+```python
+# Get repair orders
+orders = await vehicle.get_repair_orders()
+for order in orders:
+    print(f"Order {order.id}: {order.status}")
+    if order.description:
+        print(f"  Description: {order.description}")
+    if order.total_amount:
+        print(f"  Total: ${order.total_amount:.2f}")
+    if order.open_date:
+        print(f"  Opened: {order.open_date.isoformat()}")
+```
+
+### User Information
+
+Get information about the authenticated user and accounts:
+
+```python
+# Get user info
+user_info = await client.get_user_info()
+if user_info:
+    print(f"User: {user_info.get('email')}")
+
+# Get accounts
+accounts = await client.get_accounts()
+print(f"Found {len(accounts)} account(s)")
+```
+
 ## API Reference
 
 ### LoJackClient
@@ -316,6 +365,10 @@ vehicle.odometer      # Optional[float]
 
 # Methods (extends Device methods)
 await vehicle.update(name=..., make=..., model=..., year=..., vin=..., odometer=...)
+
+# Maintenance and repair methods
+schedule = await vehicle.get_maintenance_schedule()  # MaintenanceSchedule|None
+orders = await vehicle.get_repair_orders()           # List[RepairOrder]
 ```
 
 ### Data Models
@@ -363,6 +416,36 @@ geofence.address    # Optional[str] - Address description
 geofence.active     # bool - Whether geofence is active
 geofence.asset_id   # Optional[str] - Associated device ID
 geofence.raw        # Dict[str, Any] - Original API response
+
+# Maintenance models
+from lojack_api import MaintenanceItem, MaintenanceSchedule
+
+# MaintenanceItem - Single service item
+item.name           # str - Service name (e.g., "Oil Change")
+item.description    # Optional[str] - Detailed description
+item.severity       # Optional[str] - Severity level ("NORMAL", "WARNING", "CRITICAL")
+item.mileage_due    # Optional[float] - Mileage at which service is due
+item.months_due     # Optional[int] - Months until service is due
+item.action         # Optional[str] - Recommended action
+item.raw            # Dict[str, Any] - Original API response
+
+# MaintenanceSchedule - Collection of maintenance items
+schedule.vin        # str - Vehicle VIN
+schedule.items      # List[MaintenanceItem] - Scheduled services
+schedule.raw        # Dict[str, Any] - Original API response
+
+# RepairOrder - Service/repair record
+from lojack_api import RepairOrder
+
+order.id            # str - Unique repair order identifier
+order.vin           # Optional[str] - Vehicle VIN
+order.asset_id      # Optional[str] - Associated asset ID
+order.status        # Optional[str] - Order status ("OPEN", "CLOSED")
+order.open_date     # Optional[datetime] - When order was opened
+order.close_date    # Optional[datetime] - When order was closed
+order.description   # Optional[str] - Description of repair
+order.total_amount  # Optional[float] - Total cost
+order.raw           # Dict[str, Any] - Original API response
 ```
 
 ### Exceptions

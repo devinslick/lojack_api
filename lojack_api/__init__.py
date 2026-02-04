@@ -34,7 +34,15 @@ from .exceptions import (
     LoJackError,
     TimeoutError,
 )
-from .models import DeviceInfo, Geofence, Location, VehicleInfo
+from .models import (
+    DeviceInfo,
+    Geofence,
+    Location,
+    MaintenanceItem,
+    MaintenanceSchedule,
+    RepairOrder,
+    VehicleInfo,
+)
 from .transport import AiohttpTransport
 
 __version__ = "0.6.4"
@@ -53,6 +61,9 @@ __all__ = [
     "VehicleInfo",
     "Location",
     "Geofence",
+    "MaintenanceItem",
+    "MaintenanceSchedule",
+    "RepairOrder",
     # Auth
     "AuthArtifacts",
     "AuthManager",

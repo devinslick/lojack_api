@@ -13,8 +13,8 @@ Usage:
 
 import argparse
 import asyncio
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
 from lojack_api import LoJackClient
 
@@ -101,7 +101,6 @@ async def poll_device_location(
 
             # Check if timestamp changed
             if initial_timestamp and current_ts > initial_timestamp:
-                improvement = (initial_timestamp - current_ts).total_seconds()
                 print(f"    [Poll #{poll_count}] Fresh data received!")
                 print(f"    New timestamp: {current_ts.isoformat()}")
                 print(f"    Age: {format_age(age)} (was {format_age((now - initial_timestamp).total_seconds())})")
@@ -231,7 +230,7 @@ Note:
             initial_ts = await show_device_status(client, device, verbose=args.verbose)
 
             if args.locate:
-                print(f"\n  Sending 'locate' command...")
+                print("\n  Sending 'locate' command...")
                 try:
                     success = await device.request_location_update()
                     if success:

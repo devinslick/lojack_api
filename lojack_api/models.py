@@ -485,6 +485,144 @@ class Geofence:
         return payload
 
 
+@dataclass
+class MaintenanceItem:
+    """A single maintenance service item.
+
+    Attributes:
+        name: Service name (e.g., "Oil Change", "Tire Rotation").
+        description: Detailed description of the service.
+        severity: Severity level (e.g., "NORMAL", "WARNING", "CRITICAL").
+        mileage_due: Mileage at which service is due.
+        months_due: Months until service is due.
+        action: Recommended action.
+        raw: Original API response data.
+    """
+
+    name: str
+    description: str | None = None
+    severity: str | None = None
+    mileage_due: float | None = None
+    months_due: int | None = None
+    action: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> MaintenanceItem:
+        """Parse a maintenance item from API response data."""
+        mileage = data.get("mileageDue") or data.get("dueMileage")
+        if mileage is not None:
+            try:
+                mileage = float(mileage)
+            except (ValueError, TypeError):
+                mileage = None
+
+        months = data.get("monthsDue") or data.get("dueMonths")
+        if months is not None:
+            try:
+                months = int(months)
+            except (ValueError, TypeError):
+                months = None
+
+        return cls(
+            name=data.get("name") or data.get("serviceName") or "",
+            description=data.get("description") or data.get("serviceDescription"),
+            severity=data.get("severity") or data.get("level"),
+            mileage_due=mileage,
+            months_due=months,
+            action=data.get("action") or data.get("recommendedAction"),
+            raw=data,
+        )
+
+
+@dataclass
+class MaintenanceSchedule:
+    """Vehicle maintenance schedule.
+
+    Attributes:
+        vin: Vehicle identification number.
+        items: List of maintenance items.
+        raw: Original API response data.
+    """
+
+    vin: str
+    items: list[MaintenanceItem] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any], vin: str = "") -> MaintenanceSchedule:
+        """Parse a maintenance schedule from API response data."""
+        items: list[MaintenanceItem] = []
+
+        # Items may be nested in various ways
+        raw_items = (
+            data.get("items")
+            or data.get("services")
+            or data.get("maintenanceItems")
+            or data.get("schedule")
+            or []
+        )
+
+        for item_data in raw_items:
+            if isinstance(item_data, dict):
+                items.append(MaintenanceItem.from_api(item_data))
+
+        return cls(
+            vin=vin or data.get("vin") or "",
+            items=items,
+            raw=data,
+        )
+
+
+@dataclass
+class RepairOrder:
+    """A vehicle repair order.
+
+    Attributes:
+        id: Unique repair order identifier.
+        vin: Vehicle identification number.
+        asset_id: Associated asset ID.
+        status: Order status (e.g., "OPEN", "CLOSED").
+        open_date: When the order was opened.
+        close_date: When the order was closed (if applicable).
+        description: Description of the repair.
+        total_amount: Total cost of repairs.
+        raw: Original API response data.
+    """
+
+    id: str
+    vin: str | None = None
+    asset_id: str | None = None
+    status: str | None = None
+    open_date: datetime | None = None
+    close_date: datetime | None = None
+    description: str | None = None
+    total_amount: float | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> RepairOrder:
+        """Parse a repair order from API response data."""
+        total = data.get("totalAmount") or data.get("total")
+        if total is not None:
+            try:
+                total = float(total)
+            except (ValueError, TypeError):
+                total = None
+
+        return cls(
+            id=data.get("id") or data.get("repairOrderId") or "",
+            vin=data.get("vin"),
+            asset_id=data.get("assetId"),
+            status=data.get("status"),
+            open_date=_parse_timestamp(data.get("openDate") or data.get("createdDate")),
+            close_date=_parse_timestamp(data.get("closeDate") or data.get("closedDate")),
+            description=data.get("description") or data.get("notes"),
+            total_amount=total,
+            raw=data,
+        )
+
+
 def _parse_gps_accuracy(
     accuracy: Any, hdop: Any = None, gps_quality: str | None = None
 ) -> float | None:

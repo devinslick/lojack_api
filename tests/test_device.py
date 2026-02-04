@@ -146,6 +146,156 @@ class TestDevice:
         assert device.id in repr_str
 
 
+class TestDeviceGeofences:
+    """Tests for Device geofence methods."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        client.list_geofences = AsyncMock(return_value=[])
+        client.get_geofence = AsyncMock(return_value=None)
+        client.create_geofence = AsyncMock(return_value=None)
+        client.update_geofence = AsyncMock(return_value=True)
+        client.delete_geofence = AsyncMock(return_value=True)
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    @pytest.mark.asyncio
+    async def test_list_geofences(self, device, mock_client):
+        """Test listing geofences."""
+        await device.list_geofences()
+        mock_client.list_geofences.assert_called_once_with(device.id)
+
+    @pytest.mark.asyncio
+    async def test_get_geofence(self, device, mock_client):
+        """Test getting a geofence."""
+        await device.get_geofence("geo-1")
+        mock_client.get_geofence.assert_called_once_with(device.id, "geo-1")
+
+    @pytest.mark.asyncio
+    async def test_create_geofence(self, device, mock_client):
+        """Test creating a geofence."""
+        await device.create_geofence(
+            name="Home", latitude=32.84, longitude=-97.07, radius=100.0
+        )
+        mock_client.create_geofence.assert_called_once_with(
+            device.id,
+            name="Home",
+            latitude=32.84,
+            longitude=-97.07,
+            radius=100.0,
+            address=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_geofence(self, device, mock_client):
+        """Test updating a geofence."""
+        await device.update_geofence("geo-1", name="Updated")
+        mock_client.update_geofence.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_geofence(self, device, mock_client):
+        """Test deleting a geofence."""
+        await device.delete_geofence("geo-1")
+        mock_client.delete_geofence.assert_called_once_with(device.id, "geo-1")
+
+
+class TestDeviceLocationMethods:
+    """Tests for Device location methods."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        client.get_current_location = AsyncMock(return_value=None)
+        client.get_locations = AsyncMock(return_value=[])
+        client.send_command = AsyncMock(return_value=True)
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    @pytest.mark.asyncio
+    async def test_request_location_update(self, device, mock_client):
+        """Test requesting location update."""
+        result = await device.request_location_update()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(device.id, "locate")
+
+    @pytest.mark.asyncio
+    async def test_request_fresh_location(self, device, mock_client, location):
+        """Test requesting fresh location."""
+        mock_client.get_current_location.return_value = location
+
+        baseline_ts = await device.request_fresh_location()
+
+        assert baseline_ts == location.timestamp
+        mock_client.send_command.assert_called_once_with(device.id, "locate")
+
+    @pytest.mark.asyncio
+    async def test_request_fresh_location_no_location(self, device, mock_client):
+        """Test requesting fresh location when no current location."""
+        mock_client.get_current_location.return_value = None
+
+        baseline_ts = await device.request_fresh_location()
+
+        assert baseline_ts is None
+        mock_client.send_command.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_request_fresh_location_command_fails(self, device, mock_client, location):
+        """Test requesting fresh location when command fails."""
+        mock_client.get_current_location.return_value = location
+        mock_client.send_command.side_effect = Exception("Command failed")
+
+        # Should not raise, just return baseline
+        baseline_ts = await device.request_fresh_location()
+
+        assert baseline_ts == location.timestamp
+
+    def test_location_timestamp(self, device, location):
+        """Test location_timestamp property."""
+        device._cached_location = location
+        assert device.location_timestamp == location.timestamp
+
+    def test_location_timestamp_none(self, device):
+        """Test location_timestamp when no cached location."""
+        assert device.location_timestamp is None
+
+
+class TestDeviceUpdate:
+    """Tests for Device update method."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        client.update_asset = AsyncMock(return_value=True)
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    @pytest.mark.asyncio
+    async def test_update(self, device, mock_client):
+        """Test updating device."""
+        result = await device.update(name="New Name")
+
+        assert result is True
+        mock_client.update_asset.assert_called_once_with(
+            device.id, name="New Name", color=None
+        )
+
+
 class TestVehicle:
     """Tests for Vehicle wrapper."""
 
@@ -156,6 +306,9 @@ class TestVehicle:
         client.get_current_location = AsyncMock(return_value=None)
         client.get_locations = AsyncMock(return_value=[])
         client.send_command = AsyncMock(return_value=True)
+        client.update_asset = AsyncMock(return_value=True)
+        client.get_maintenance_schedule = AsyncMock(return_value=None)
+        client.get_repair_orders = AsyncMock(return_value=[])
         return client
 
     @pytest.fixture
@@ -177,3 +330,39 @@ class TestVehicle:
         assert "Vehicle" in repr_str
         assert vehicle.id in repr_str
         assert vehicle.vin in repr_str
+
+    @pytest.mark.asyncio
+    async def test_update(self, vehicle, mock_client):
+        """Test updating vehicle."""
+        result = await vehicle.update(name="New Name", odometer=50000.0)
+
+        assert result is True
+        mock_client.update_asset.assert_called_once()
+        call_args = mock_client.update_asset.call_args
+        assert call_args[1]["name"] == "New Name"
+        assert call_args[1]["odometer"] == 50000.0
+
+    @pytest.mark.asyncio
+    async def test_get_maintenance_schedule(self, vehicle, mock_client):
+        """Test getting maintenance schedule."""
+        await vehicle.get_maintenance_schedule()
+        mock_client.get_maintenance_schedule.assert_called_once_with(vehicle.vin)
+
+    @pytest.mark.asyncio
+    async def test_get_maintenance_schedule_no_vin(self, mock_client, vehicle_info):
+        """Test getting maintenance schedule without VIN."""
+        vehicle_info.vin = None
+        vehicle = Vehicle(mock_client, vehicle_info)
+
+        result = await vehicle.get_maintenance_schedule()
+
+        assert result is None
+        mock_client.get_maintenance_schedule.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_repair_orders(self, vehicle, mock_client):
+        """Test getting repair orders."""
+        await vehicle.get_repair_orders()
+        mock_client.get_repair_orders.assert_called_once_with(
+            vin=vehicle.vin, asset_id=vehicle.id
+        )

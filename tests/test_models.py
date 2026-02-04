@@ -4,7 +4,11 @@ from datetime import datetime, timezone
 
 from lojack_api.models import (
     DeviceInfo,
+    Geofence,
     Location,
+    MaintenanceItem,
+    MaintenanceSchedule,
+    RepairOrder,
     VehicleInfo,
     _parse_gps_accuracy,
     _parse_timestamp,
@@ -227,3 +231,189 @@ class TestVehicleInfo:
         data = {"id": "v1", "licensePlate": "XYZ789"}
         vehicle = VehicleInfo.from_api(data)
         assert vehicle.license_plate == "XYZ789"
+
+
+class TestGeofence:
+    """Tests for Geofence model."""
+
+    def test_from_api_basic(self):
+        """Test basic geofence parsing."""
+        data = {
+            "id": "geo-001",
+            "name": "Home",
+            "location": {
+                "coordinates": {"lat": 32.8427, "lng": -97.0715},
+                "radius": 100.0,
+            },
+            "active": True,
+        }
+        geofence = Geofence.from_api(data, asset_id="asset-001")
+        assert geofence.id == "geo-001"
+        assert geofence.name == "Home"
+        assert geofence.latitude == 32.8427
+        assert geofence.longitude == -97.0715
+        assert geofence.radius == 100.0
+        assert geofence.active is True
+        assert geofence.asset_id == "asset-001"
+
+    def test_from_api_alternate_keys(self):
+        """Test parsing with alternate key names."""
+        data = {
+            "geofenceId": "geo-002",
+            "label": "Work",
+            "lat": 40.7128,
+            "longitude": -74.006,
+            "radius": "200",
+            "active": False,
+        }
+        geofence = Geofence.from_api(data)
+        assert geofence.id == "geo-002"
+        assert geofence.name == "Work"
+        assert geofence.latitude == 40.7128
+        assert geofence.longitude == -74.006
+        assert geofence.radius == 200.0
+        assert geofence.active is False
+
+    def test_from_api_with_address(self):
+        """Test parsing with nested address."""
+        data = {
+            "id": "geo-003",
+            "name": "Office",
+            "location": {
+                "coordinates": {"lat": 37.7749, "lng": -122.4194},
+                "address": {
+                    "line1": "123 Market St",
+                    "city": "San Francisco",
+                    "stateOrProvince": "CA",
+                    "postalCode": "94105",
+                },
+            },
+        }
+        geofence = Geofence.from_api(data)
+        assert geofence.address == "123 Market St, San Francisco, CA 94105"
+
+    def test_to_api_payload(self):
+        """Test converting to API payload."""
+        geofence = Geofence(
+            id="geo-001",
+            name="Test",
+            latitude=32.8427,
+            longitude=-97.0715,
+            radius=150.0,
+            address="123 Main St",
+            active=True,
+        )
+        payload = geofence.to_api_payload()
+        assert payload["name"] == "Test"
+        assert payload["location"]["coordinates"]["lat"] == 32.8427
+        assert payload["location"]["coordinates"]["lng"] == -97.0715
+        assert payload["location"]["radius"] == 150.0
+        assert payload["active"] is True
+
+
+class TestMaintenanceItem:
+    """Tests for MaintenanceItem model."""
+
+    def test_from_api_basic(self):
+        """Test basic maintenance item parsing."""
+        data = {
+            "name": "Oil Change",
+            "description": "Replace engine oil and filter",
+            "severity": "NORMAL",
+            "mileageDue": 55000,
+            "monthsDue": 6,
+            "action": "Schedule service",
+        }
+        item = MaintenanceItem.from_api(data)
+        assert item.name == "Oil Change"
+        assert item.description == "Replace engine oil and filter"
+        assert item.severity == "NORMAL"
+        assert item.mileage_due == 55000.0
+        assert item.months_due == 6
+        assert item.action == "Schedule service"
+
+    def test_from_api_alternate_keys(self):
+        """Test parsing with alternate key names."""
+        data = {
+            "serviceName": "Tire Rotation",
+            "serviceDescription": "Rotate tires",
+            "level": "WARNING",
+            "dueMileage": 60000,
+            "dueMonths": 12,
+            "recommendedAction": "Visit dealer",
+        }
+        item = MaintenanceItem.from_api(data)
+        assert item.name == "Tire Rotation"
+        assert item.description == "Rotate tires"
+        assert item.severity == "WARNING"
+        assert item.mileage_due == 60000.0
+        assert item.months_due == 12
+        assert item.action == "Visit dealer"
+
+
+class TestMaintenanceSchedule:
+    """Tests for MaintenanceSchedule model."""
+
+    def test_from_api_basic(self):
+        """Test basic maintenance schedule parsing."""
+        data = {
+            "vin": "1HGCM82633A123456",
+            "items": [
+                {"name": "Oil Change", "mileageDue": 55000},
+                {"name": "Tire Rotation", "mileageDue": 60000},
+            ],
+        }
+        schedule = MaintenanceSchedule.from_api(data)
+        assert schedule.vin == "1HGCM82633A123456"
+        assert len(schedule.items) == 2
+        assert schedule.items[0].name == "Oil Change"
+        assert schedule.items[1].name == "Tire Rotation"
+
+    def test_from_api_with_vin_param(self):
+        """Test VIN passed as parameter."""
+        data = {"services": [{"name": "Brake Inspection"}]}
+        schedule = MaintenanceSchedule.from_api(data, vin="VIN123")
+        assert schedule.vin == "VIN123"
+        assert len(schedule.items) == 1
+
+
+class TestRepairOrder:
+    """Tests for RepairOrder model."""
+
+    def test_from_api_basic(self):
+        """Test basic repair order parsing."""
+        data = {
+            "id": "RO-001",
+            "vin": "1HGCM82633A123456",
+            "assetId": "asset-001",
+            "status": "CLOSED",
+            "openDate": "2024-01-15T10:30:00Z",
+            "closeDate": "2024-01-16T15:00:00Z",
+            "description": "Oil change and inspection",
+            "totalAmount": 75.50,
+        }
+        order = RepairOrder.from_api(data)
+        assert order.id == "RO-001"
+        assert order.vin == "1HGCM82633A123456"
+        assert order.asset_id == "asset-001"
+        assert order.status == "CLOSED"
+        assert order.open_date is not None
+        assert order.close_date is not None
+        assert order.description == "Oil change and inspection"
+        assert order.total_amount == 75.50
+
+    def test_from_api_alternate_keys(self):
+        """Test parsing with alternate key names."""
+        data = {
+            "repairOrderId": "RO-002",
+            "status": "OPEN",
+            "createdDate": "2024-02-01T09:00:00Z",
+            "notes": "Brake service",
+            "total": "125.00",
+        }
+        order = RepairOrder.from_api(data)
+        assert order.id == "RO-002"
+        assert order.status == "OPEN"
+        assert order.open_date is not None
+        assert order.description == "Brake service"
+        assert order.total_amount == 125.0

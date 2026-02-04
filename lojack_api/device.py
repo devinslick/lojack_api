@@ -430,6 +430,29 @@ class Vehicle(Device):
             odometer=odometer,
         )
 
+    async def get_maintenance_schedule(self):
+        """Get the maintenance schedule for this vehicle.
+
+        Requires the vehicle to have a VIN.
+
+        Returns:
+            MaintenanceSchedule with service items, or None if unavailable.
+        """
+        if not self.vin:
+            return None
+        return await self._client.get_maintenance_schedule(self.vin)
+
+    async def get_repair_orders(self):
+        """Get repair orders for this vehicle.
+
+        Returns:
+            A list of RepairOrder objects.
+        """
+        return await self._client.get_repair_orders(
+            vin=self.vin,
+            asset_id=self.id,
+        )
+
     def __repr__(self) -> str:
         return f"Vehicle(id={self.id!r}, name={self.name!r}, vin={self.vin!r})"
 

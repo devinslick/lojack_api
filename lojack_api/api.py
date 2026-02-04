@@ -16,7 +16,15 @@ import aiohttp
 from .auth import DEFAULT_APP_TOKEN, AuthArtifacts, AuthManager
 from .device import Device, Vehicle
 from .exceptions import ApiError, DeviceNotFoundError
-from .models import DeviceInfo, Geofence, Location, VehicleInfo, _parse_timestamp
+from .models import (
+    DeviceInfo,
+    Geofence,
+    Location,
+    MaintenanceSchedule,
+    RepairOrder,
+    VehicleInfo,
+    _parse_timestamp,
+)
 from .transport import AiohttpTransport
 
 # Default Spireon API endpoints
@@ -705,6 +713,131 @@ class LoJackClient:
 
         await self._services_transport.request("DELETE", path, headers=headers)
         return True
+
+    async def get_maintenance_schedule(self, vin: str) -> MaintenanceSchedule | None:
+        """Get maintenance schedule for a vehicle by VIN.
+
+        Args:
+            vin: Vehicle identification number.
+
+        Returns:
+            MaintenanceSchedule with service items, or None if not found.
+        """
+        headers = await self._get_headers()
+        params = {"vin": vin}
+
+        # Maintenance endpoint is on the services API
+        path = "/automotive/maintenanceSchedule"
+        try:
+            data = await self._services_transport.request(
+                "GET", path, params=params, headers=headers
+            )
+        except ApiError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
+        if not isinstance(data, dict):
+            return None
+
+        return MaintenanceSchedule.from_api(data, vin=vin)
+
+    async def get_repair_orders(
+        self,
+        *,
+        vin: str | None = None,
+        asset_id: str | None = None,
+        sort: str = "openDate:desc",
+    ) -> list[RepairOrder]:
+        """Get repair orders for a vehicle.
+
+        Either vin or asset_id must be provided.
+
+        Args:
+            vin: Vehicle identification number.
+            asset_id: Asset ID.
+            sort: Sort order (default: "openDate:desc").
+
+        Returns:
+            A list of RepairOrder objects.
+        """
+        if not vin and not asset_id:
+            return []
+
+        headers = await self._get_headers()
+        params: dict[str, Any] = {"sort": sort}
+
+        if vin:
+            params["vin"] = vin
+        if asset_id:
+            params["assetId"] = asset_id
+
+        path = "/repairOrders"
+        try:
+            data = await self._services_transport.request(
+                "GET", path, params=params, headers=headers
+            )
+        except ApiError as e:
+            if e.status_code == 404:
+                return []
+            raise
+
+        orders: list[RepairOrder] = []
+        raw_items: list[Any] = []
+
+        if isinstance(data, dict):
+            raw_items = (
+                data.get("content")
+                or data.get("repairOrders")
+                or data.get("orders")
+                or []
+            )
+        elif isinstance(data, list):
+            raw_items = data
+
+        for item in raw_items:
+            if isinstance(item, dict):
+                orders.append(RepairOrder.from_api(item))
+
+        return orders
+
+    async def get_user_info(self) -> dict[str, Any] | None:
+        """Get information about the authenticated user.
+
+        Returns:
+            User profile information as a dictionary, or None if unavailable.
+        """
+        headers = await self._get_headers()
+        path = "/identity"
+
+        try:
+            data = await self._services_transport.request("GET", path, headers=headers)
+        except ApiError:
+            return None
+
+        if isinstance(data, dict):
+            return data
+        return None
+
+    async def get_accounts(self) -> list[dict[str, Any]]:
+        """Get all accounts associated with the user.
+
+        Returns:
+            A list of account dictionaries.
+        """
+        headers = await self._get_headers()
+        path = "/accounts"
+
+        try:
+            data = await self._services_transport.request("GET", path, headers=headers)
+        except ApiError:
+            return []
+
+        if isinstance(data, dict):
+            return data.get("content") or data.get("accounts") or []
+        elif isinstance(data, list):
+            return data
+        return []
 
     async def close(self) -> None:
         """Close the client and release resources."""
