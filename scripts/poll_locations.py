@@ -99,8 +99,13 @@ async def poll_device_location(
         if current_ts:
             age = (now - current_ts).total_seconds()
 
-            # Check if timestamp changed
-            if initial_timestamp and current_ts > initial_timestamp:
+            # Check if timestamp changed (or first timestamp arrived when none existed)
+            if initial_timestamp is None:
+                # No baseline - first non-None timestamp is success
+                print(f"    [Poll #{poll_count}] First location data received!")
+                print(f"    Timestamp: {current_ts.isoformat()} (age: {format_age(age)})")
+                return True
+            elif current_ts > initial_timestamp:
                 print(f"    [Poll #{poll_count}] Fresh data received!")
                 print(f"    New timestamp: {current_ts.isoformat()}")
                 print(f"    Age: {format_age(age)} (was {format_age((now - initial_timestamp).total_seconds())})")
