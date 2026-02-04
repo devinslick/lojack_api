@@ -34,7 +34,7 @@ from .exceptions import (
     LoJackError,
     TimeoutError,
 )
-from .models import DeviceInfo, Location, VehicleInfo
+from .models import DeviceInfo, Geofence, Location, VehicleInfo
 from .transport import AiohttpTransport
 
 __version__ = "0.6.4"
@@ -52,6 +52,7 @@ __all__ = [
     "DeviceInfo",
     "VehicleInfo",
     "Location",
+    "Geofence",
     # Auth
     "AuthArtifacts",
     "AuthManager",

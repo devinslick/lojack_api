@@ -217,6 +217,123 @@ class Device:
             return self._cached_location.timestamp
         return None
 
+    async def update(
+        self,
+        *,
+        name: str | None = None,
+        color: str | None = None,
+    ) -> bool:
+        """Update device information.
+
+        Args:
+            name: New name for the device.
+            color: Device color.
+
+        Returns:
+            True if the update was successful.
+        """
+        return await self._client.update_asset(
+            self.id,
+            name=name,
+            color=color,
+        )
+
+    async def list_geofences(self) -> list:
+        """List all geofences for this device.
+
+        Returns:
+            A list of Geofence objects.
+        """
+        return await self._client.list_geofences(self.id)
+
+    async def get_geofence(self, geofence_id: str):
+        """Get a specific geofence.
+
+        Args:
+            geofence_id: The geofence ID.
+
+        Returns:
+            The Geofence, or None if not found.
+        """
+        return await self._client.get_geofence(self.id, geofence_id)
+
+    async def create_geofence(
+        self,
+        *,
+        name: str,
+        latitude: float,
+        longitude: float,
+        radius: float = 100.0,
+        address: str | None = None,
+    ):
+        """Create a new geofence for this device.
+
+        Args:
+            name: Display name for the geofence.
+            latitude: Center point latitude.
+            longitude: Center point longitude.
+            radius: Radius in meters (default: 100).
+            address: Optional address description.
+
+        Returns:
+            The created Geofence, or None if creation failed.
+        """
+        return await self._client.create_geofence(
+            self.id,
+            name=name,
+            latitude=latitude,
+            longitude=longitude,
+            radius=radius,
+            address=address,
+        )
+
+    async def update_geofence(
+        self,
+        geofence_id: str,
+        *,
+        name: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        radius: float | None = None,
+        address: str | None = None,
+        active: bool | None = None,
+    ) -> bool:
+        """Update an existing geofence.
+
+        Args:
+            geofence_id: The geofence ID to update.
+            name: New display name.
+            latitude: New center point latitude.
+            longitude: New center point longitude.
+            radius: New radius in meters.
+            address: New address description.
+            active: Whether the geofence is active.
+
+        Returns:
+            True if the update was successful.
+        """
+        return await self._client.update_geofence(
+            self.id,
+            geofence_id,
+            name=name,
+            latitude=latitude,
+            longitude=longitude,
+            radius=radius,
+            address=address,
+            active=active,
+        )
+
+    async def delete_geofence(self, geofence_id: str) -> bool:
+        """Delete a geofence.
+
+        Args:
+            geofence_id: The geofence ID to delete.
+
+        Returns:
+            True if the deletion was successful.
+        """
+        return await self._client.delete_geofence(self.id, geofence_id)
+
     def __repr__(self) -> str:
         return f"Device(id={self.id!r}, name={self.name!r})"
 
@@ -276,6 +393,42 @@ class Vehicle(Device):
     def odometer(self) -> float | None:
         """Return the vehicle's odometer reading."""
         return self._vehicle_info.odometer
+
+    async def update(
+        self,
+        *,
+        name: str | None = None,
+        color: str | None = None,
+        make: str | None = None,
+        model: str | None = None,
+        year: int | None = None,
+        vin: str | None = None,
+        odometer: float | None = None,
+    ) -> bool:
+        """Update vehicle information.
+
+        Args:
+            name: New name for the vehicle.
+            color: Vehicle color.
+            make: Vehicle make.
+            model: Vehicle model.
+            year: Vehicle year.
+            vin: Vehicle VIN.
+            odometer: Current odometer reading.
+
+        Returns:
+            True if the update was successful.
+        """
+        return await self._client.update_asset(
+            self.id,
+            name=name,
+            color=color,
+            make=make,
+            model=model,
+            year=year,
+            vin=vin,
+            odometer=odometer,
+        )
 
     def __repr__(self) -> str:
         return f"Vehicle(id={self.id!r}, name={self.name!r}, vin={self.vin!r})"

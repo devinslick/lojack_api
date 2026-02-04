@@ -186,6 +186,53 @@ python scripts/poll_locations.py --locate
 python scripts/poll_locations.py --poll 30
 ```
 
+### Geofences
+
+Geofences define circular areas that can trigger alerts when a device enters
+or exits the boundary.
+
+```python
+# List all geofences for a device
+geofences = await device.list_geofences()
+for geofence in geofences:
+    print(f"{geofence.name}: {geofence.latitude}, {geofence.longitude} (r={geofence.radius}m)")
+
+# Create a geofence
+geofence = await device.create_geofence(
+    name="Home",
+    latitude=32.8427,
+    longitude=-97.0715,
+    radius=100.0,  # meters
+    address="123 Main St"
+)
+
+# Update a geofence
+await device.update_geofence(
+    geofence.id,
+    name="Home Base",
+    radius=150.0
+)
+
+# Delete a geofence
+await device.delete_geofence(geofence.id)
+```
+
+### Updating Device Information
+
+Update device/vehicle metadata:
+
+```python
+# Update device name
+await device.update(name="My Tracker")
+
+# For vehicles, update additional fields
+await vehicle.update(
+    name="Family Car",
+    odometer=51000.0,
+    color="Blue"
+)
+```
+
 ## API Reference
 
 ### LoJackClient
@@ -240,13 +287,23 @@ async for loc in device.get_history(limit=100):    # Iterate location history
 success = await device.request_location_update()   # bool - fire-and-forget locate
 baseline = await device.request_fresh_location()   # datetime|None - locate + baseline
 
+# Device updates
+await device.update(name="New Name")               # Update device info
+
+# Geofence management
+geofences = await device.list_geofences()          # List[Geofence]
+geofence = await device.get_geofence(geofence_id)  # Geofence|None
+geofence = await device.create_geofence(name=..., latitude=..., longitude=..., radius=...)
+await device.update_geofence(geofence_id, name=..., radius=...)
+await device.delete_geofence(geofence_id)
+
 # Properties
 device.location_timestamp  # datetime|None - cached location's timestamp
 ```
 
 ### Vehicle (extends Device)
 
-Additional properties for vehicles.
+Additional properties and methods for vehicles.
 
 ```python
 # Properties
@@ -256,6 +313,9 @@ vehicle.model         # Optional[str]
 vehicle.year          # Optional[int]
 vehicle.license_plate # Optional[str]
 vehicle.odometer      # Optional[float]
+
+# Methods (extends Device methods)
+await vehicle.update(name=..., make=..., model=..., year=..., vin=..., odometer=...)
 ```
 
 ### Data Models
@@ -290,6 +350,19 @@ location.event_id        # Optional[str] - Unique event identifier
 
 # Location - Raw data
 location.raw        # Dict[str, Any] - Original API response
+
+# Geofence
+from lojack_api import Geofence
+
+geofence.id         # str - Unique identifier
+geofence.name       # Optional[str] - Display name
+geofence.latitude   # Optional[float] - Center latitude
+geofence.longitude  # Optional[float] - Center longitude
+geofence.radius     # Optional[float] - Radius in meters
+geofence.address    # Optional[str] - Address description
+geofence.active     # bool - Whether geofence is active
+geofence.asset_id   # Optional[str] - Associated device ID
+geofence.raw        # Dict[str, Any] - Original API response
 ```
 
 ### Exceptions
