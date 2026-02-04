@@ -1,10 +1,11 @@
 """Tests for device wrapper classes."""
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from lojack_api.device import Device, Vehicle
+from lojack_api.device import Device, Vehicle, _enrich_location_from_event
 from lojack_api.models import Location
 
 
@@ -366,3 +367,209 @@ class TestVehicle:
         mock_client.get_repair_orders.assert_called_once_with(
             vin=vehicle.vin, asset_id=vehicle.id
         )
+
+    def test_odometer_property(self, vehicle, vehicle_info):
+        """Test odometer property."""
+        vehicle_info.odometer = 50000.0
+        assert vehicle.odometer == 50000.0
+
+
+class TestDeviceProperties:
+    """Tests for Device properties."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    def test_last_seen(self, device, device_info):
+        """Test last_seen property."""
+        ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        device_info.last_seen = ts
+        assert device.last_seen == ts
+
+    def test_last_seen_none(self, device, device_info):
+        """Test last_seen property when None."""
+        device_info.last_seen = None
+        assert device.last_seen is None
+
+
+class TestDeviceRefreshNoData:
+    """Tests for Device refresh when no data is available."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        client.get_current_location = AsyncMock(return_value=None)
+        client.get_locations = AsyncMock(return_value=[])
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    @pytest.mark.asyncio
+    async def test_refresh_no_location_no_events(self, device, mock_client):
+        """Test refresh when neither location nor events are available."""
+        await device.refresh(force=True)
+
+        assert device.cached_location is None
+        assert device.last_refresh is not None
+
+
+class TestDeviceRefreshWithEvent:
+    """Tests for Device refresh with event data."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    @pytest.mark.asyncio
+    async def test_refresh_uses_event_when_no_current_location(
+        self, device, mock_client
+    ):
+        """Test refresh uses event location when current location unavailable."""
+        event_loc = Location(latitude=32.84, longitude=-97.07, speed=25.0)
+
+        mock_client.get_current_location = AsyncMock(return_value=None)
+        mock_client.get_locations = AsyncMock(return_value=[event_loc])
+
+        await device.refresh(force=True)
+
+        assert device.cached_location is event_loc
+
+
+class TestEnrichLocationFromEvent:
+    """Tests for _enrich_location_from_event function."""
+
+    def test_enrich_all_telemetry(self):
+        """Test enriching location with all telemetry data."""
+        location = Location(latitude=32.84, longitude=-97.07)
+        event = Location(
+            latitude=32.84,
+            longitude=-97.07,
+            speed=25.0,
+            heading=180,
+            odometer=50000.0,
+            battery_voltage=12.5,
+            engine_hours=1500.0,
+            distance_driven=45000.0,
+            signal_strength=0.85,
+            gps_fix_quality="GOOD",
+            event_type="SLEEP_ENTER",
+            event_id="event-123",
+            address="123 Main St",
+            timestamp=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
+        )
+
+        _enrich_location_from_event(location, event)
+
+        assert location.speed == 25.0
+        assert location.heading == 180
+        assert location.odometer == 50000.0
+        assert location.battery_voltage == 12.5
+        assert location.engine_hours == 1500.0
+        assert location.distance_driven == 45000.0
+        assert location.signal_strength == 0.85
+        assert location.gps_fix_quality == "GOOD"
+        assert location.event_type == "SLEEP_ENTER"
+        assert location.event_id == "event-123"
+        assert location.address == "123 Main St"
+        assert location.timestamp is not None
+
+    def test_enrich_does_not_overwrite_existing(self):
+        """Test that enrichment does not overwrite existing values."""
+        location = Location(
+            latitude=32.84,
+            longitude=-97.07,
+            speed=30.0,
+            heading=90,
+        )
+        event = Location(
+            latitude=32.84,
+            longitude=-97.07,
+            speed=25.0,
+            heading=180,
+        )
+
+        _enrich_location_from_event(location, event)
+
+        # Should keep original values
+        assert location.speed == 30.0
+        assert location.heading == 90
+
+    def test_enrich_updates_timestamp_if_newer(self):
+        """Test that timestamp is updated if event is newer."""
+        old_ts = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        new_ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+
+        location = Location(latitude=32.84, longitude=-97.07, timestamp=old_ts)
+        event = Location(latitude=32.84, longitude=-97.07, timestamp=new_ts)
+
+        _enrich_location_from_event(location, event)
+
+        assert location.timestamp == new_ts
+
+    def test_enrich_does_not_update_timestamp_if_older(self):
+        """Test that timestamp is not updated if event is older."""
+        old_ts = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        new_ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+
+        location = Location(latitude=32.84, longitude=-97.07, timestamp=new_ts)
+        event = Location(latitude=32.84, longitude=-97.07, timestamp=old_ts)
+
+        _enrich_location_from_event(location, event)
+
+        assert location.timestamp == new_ts
+
+    def test_enrich_sets_timestamp_if_location_has_none(self):
+        """Test that timestamp is set if location has none."""
+        ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+
+        location = Location(latitude=32.84, longitude=-97.07, timestamp=None)
+        event = Location(latitude=32.84, longitude=-97.07, timestamp=ts)
+
+        _enrich_location_from_event(location, event)
+
+        assert location.timestamp == ts
+
+    def test_enrich_with_event_without_timestamp(self):
+        """Test enrichment when event has no timestamp."""
+        ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+
+        location = Location(latitude=32.84, longitude=-97.07, timestamp=ts)
+        event = Location(latitude=32.84, longitude=-97.07, timestamp=None)
+
+        _enrich_location_from_event(location, event)
+
+        # Should keep original timestamp
+        assert location.timestamp == ts
+
+
+class TestVehicleInfoProperty:
+    """Tests for Vehicle info property."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        return MagicMock()
+
+    def test_vehicle_info_property(self, mock_client, vehicle_info):
+        """Test that vehicle.info returns VehicleInfo."""
+        vehicle = Vehicle(mock_client, vehicle_info)
+        assert vehicle.info is vehicle_info

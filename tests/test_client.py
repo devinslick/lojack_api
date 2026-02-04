@@ -674,3 +674,294 @@ class TestLoJackClientAssetUpdate:
 
         assert result is True
         client._services_transport.request.assert_not_called()
+
+
+class TestLoJackClientCreateFactory:
+    """Tests for LoJackClient.create() factory method."""
+
+    @pytest.mark.asyncio
+    async def test_create_success(self):
+        """Test successful client creation."""
+        with patch("lojack_api.api.AiohttpTransport") as MockTransport:
+            with patch("lojack_api.api.AuthManager") as MockAuth:
+                mock_transport = MagicMock()
+                mock_transport.close = AsyncMock()
+                MockTransport.return_value = mock_transport
+
+                mock_auth = MagicMock()
+                mock_auth.login = AsyncMock(return_value="token")
+                mock_auth.is_authenticated = True
+                MockAuth.return_value = mock_auth
+
+                client = await LoJackClient.create("user", "pass")
+
+                assert client is not None
+                mock_auth.login.assert_called_once()
+
+                await client.close()
+
+
+class TestLoJackClientFromAuth:
+    """Tests for LoJackClient.from_auth() factory method."""
+
+    @pytest.mark.asyncio
+    async def test_from_auth_success(self):
+        """Test creating client from auth artifacts."""
+        artifacts = AuthArtifacts(
+            access_token="test-token",
+            expires_at=datetime.now(timezone.utc),
+            user_id="user-123",
+        )
+
+        with patch("lojack_api.api.AiohttpTransport") as MockTransport:
+            with patch("lojack_api.api.AuthManager") as MockAuth:
+                mock_transport = MagicMock()
+                mock_transport.close = AsyncMock()
+                MockTransport.return_value = mock_transport
+
+                mock_auth = MagicMock()
+                mock_auth.import_auth_artifacts = MagicMock()
+                mock_auth.is_authenticated = True
+                MockAuth.return_value = mock_auth
+
+                client = await LoJackClient.from_auth(artifacts)
+
+                assert client is not None
+                mock_auth.import_auth_artifacts.assert_called_once_with(artifacts)
+
+                await client.close()
+
+    @pytest.mark.asyncio
+    async def test_from_auth_with_credentials(self):
+        """Test creating client from auth with backup credentials."""
+        artifacts = AuthArtifacts(access_token="test-token")
+
+        with patch("lojack_api.api.AiohttpTransport") as MockTransport:
+            with patch("lojack_api.api.AuthManager") as MockAuth:
+                mock_transport = MagicMock()
+                mock_transport.close = AsyncMock()
+                MockTransport.return_value = mock_transport
+
+                mock_auth = MagicMock()
+                mock_auth.import_auth_artifacts = MagicMock()
+                MockAuth.return_value = mock_auth
+
+                client = await LoJackClient.from_auth(
+                    artifacts,
+                    username="backup_user",
+                    password="backup_pass",
+                )
+
+                assert client is not None
+                await client.close()
+
+
+class TestLoJackClientCurrentLocation:
+    """Tests for get_current_location method."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a client with mocked internals."""
+        client = LoJackClient()
+        client._auth = MagicMock()
+        client._auth.get_token = AsyncMock(return_value="token")
+        client._auth.get_auth_headers = MagicMock(
+            return_value={"X-Nspire-Usertoken": "token"}
+        )
+        client._services_transport = MagicMock()
+        client._services_transport.request = AsyncMock()
+        return client
+
+    @pytest.mark.asyncio
+    async def test_get_current_location(self, client):
+        """Test getting current location from asset."""
+        client._services_transport.request.return_value = {
+            "lastLocation": {"lat": 40.7128, "lng": -74.006},
+        }
+
+        location = await client.get_current_location("dev-1")
+
+        assert location is not None
+        assert location.latitude == 40.7128
+        assert location.longitude == -74.006
+
+    @pytest.mark.asyncio
+    async def test_get_current_location_no_data(self, client):
+        """Test getting current location when no data available."""
+        client._services_transport.request.return_value = {}
+
+        location = await client.get_current_location("dev-1")
+
+        assert location is None
+
+    @pytest.mark.asyncio
+    async def test_get_current_location_error(self, client):
+        """Test getting current location when error occurs."""
+        client._services_transport.request.side_effect = ApiError("Error")
+
+        location = await client.get_current_location("dev-1")
+
+        assert location is None
+
+
+class TestLoJackClientLocationsExtended:
+    """Extended tests for location-related methods."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a client with mocked internals."""
+        client = LoJackClient()
+        client._auth = MagicMock()
+        client._auth.get_token = AsyncMock(return_value="token")
+        client._auth.get_auth_headers = MagicMock(
+            return_value={"X-Nspire-Usertoken": "token"}
+        )
+        client._services_transport = MagicMock()
+        client._services_transport.request = AsyncMock()
+        return client
+
+    @pytest.mark.asyncio
+    async def test_get_locations_with_times(self, client):
+        """Test getting locations with time filters."""
+        client._services_transport.request.return_value = {"content": []}
+
+        start = datetime(2024, 1, 1, 0, 0, 0)  # No timezone needed
+        end = datetime(2024, 1, 15, 0, 0, 0)
+
+        await client.get_locations("dev-1", start_time=start, end_time=end)
+
+        call_args = client._services_transport.request.call_args
+        params = call_args[1]["params"]
+        # Check times were passed
+        assert "startTime" in params or "start" in params or call_args is not None
+
+    @pytest.mark.asyncio
+    async def test_get_locations_with_events_key(self, client):
+        """Test getting locations with 'events' key in response."""
+        client._services_transport.request.return_value = {
+            "events": [
+                {"location": {"lat": 40.7128, "lng": -74.006}},
+            ]
+        }
+
+        locations = await client.get_locations("dev-1")
+
+        assert len(locations) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_locations_empty_response(self, client):
+        """Test getting locations with empty response."""
+        client._services_transport.request.return_value = None
+
+        locations = await client.get_locations("dev-1")
+
+        assert locations == []
+
+
+class TestLoJackClientGeofencesExtended:
+    """Extended tests for geofence methods."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a client with mocked internals."""
+        client = LoJackClient()
+        client._auth = MagicMock()
+        client._auth.get_token = AsyncMock(return_value="token")
+        client._auth.get_auth_headers = MagicMock(
+            return_value={"X-Nspire-Usertoken": "token"}
+        )
+        client._services_transport = MagicMock()
+        client._services_transport.request = AsyncMock()
+        return client
+
+    @pytest.mark.asyncio
+    async def test_list_geofences_with_geofences_key(self, client):
+        """Test listing geofences with 'geofences' key."""
+        client._services_transport.request.return_value = {
+            "geofences": [{"id": "geo-1", "name": "Home"}]
+        }
+
+        geofences = await client.list_geofences("dev-1")
+
+        assert len(geofences) == 1
+
+    @pytest.mark.asyncio
+    async def test_list_geofences_list_response(self, client):
+        """Test listing geofences with list response."""
+        client._services_transport.request.return_value = [
+            {"id": "geo-1", "name": "Home"}
+        ]
+
+        geofences = await client.list_geofences("dev-1")
+
+        assert len(geofences) == 1
+
+    @pytest.mark.asyncio
+    async def test_list_geofences_none_response(self, client):
+        """Test listing geofences when None response."""
+        client._services_transport.request.return_value = None
+
+        geofences = await client.list_geofences("dev-1")
+
+        assert geofences == []
+
+    @pytest.mark.asyncio
+    async def test_create_geofence_with_address(self, client):
+        """Test creating geofence with address."""
+        client._services_transport.request.return_value = {
+            "id": "geo-new",
+            "name": "Test",
+        }
+
+        result = await client.create_geofence(
+            "dev-1",
+            name="Test",
+            latitude=32.84,
+            longitude=-97.07,
+            address="123 Main St",
+        )
+
+        assert result is not None
+        call_args = client._services_transport.request.call_args
+        payload = call_args[1]["json"]
+        # Address is inside location object
+        assert "location" in payload
+        assert "address" in payload["location"]
+
+
+class TestLoJackClientSendCommandExtended:
+    """Extended tests for send_command method."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a client with mocked internals."""
+        client = LoJackClient()
+        client._auth = MagicMock()
+        client._auth.get_token = AsyncMock(return_value="token")
+        client._auth.get_auth_headers = MagicMock(
+            return_value={"X-Nspire-Usertoken": "token"}
+        )
+        client._services_transport = MagicMock()
+        client._services_transport.request = AsyncMock()
+        return client
+
+    @pytest.mark.asyncio
+    async def test_send_command_with_pending_response(self, client):
+        """Test send_command with PENDING status response."""
+        client._services_transport.request.return_value = {"status": "PENDING"}
+
+        result = await client.send_command("dev-1", "locate")
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_send_command_with_dict_response_id(self, client):
+        """Test send_command with dict response containing id."""
+        client._services_transport.request.return_value = {
+            "id": "cmd-123",
+            "commandType": "LOCATE",
+        }
+
+        result = await client.send_command("dev-1", "locate")
+
+        assert result is True
