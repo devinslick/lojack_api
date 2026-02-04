@@ -1,7 +1,5 @@
 """Tests for exception classes."""
 
-import pytest
-
 from lojack_api.exceptions import (
     ApiError,
     AuthenticationError,
