@@ -62,6 +62,7 @@ async def get_location_timestamp(client: LoJackClient, device_id: str) -> dateti
         if location:
             return location.timestamp
     except Exception:
+        # Polling should continue even if individual requests fail
         pass
     return None
 
