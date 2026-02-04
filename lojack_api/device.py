@@ -171,6 +171,75 @@ class Device:
         """
         return await self.send_command("locate")
 
+    async def get_fresh_location(
+        self,
+        *,
+        poll_interval: float = 10.0,
+        max_wait: float = 120.0,
+    ) -> Location | None:
+        """Request a fresh location update and wait for the device to respond.
+
+        This method sends a "locate" command to the device, then polls
+        until fresh location data is received or the timeout is reached.
+
+        The Spireon REST API often returns stale location data (30-76+ minutes
+        old). This method mimics the mobile app behavior by requesting an
+        on-demand location update.
+
+        Args:
+            poll_interval: Seconds between location checks (default: 10).
+            max_wait: Maximum seconds to wait for fresh data (default: 120).
+
+        Returns:
+            Fresh Location if received within timeout, or the latest
+            available location if timeout is reached.
+
+        Example:
+            # Get fresh location (may take up to 2 minutes)
+            location = await device.get_fresh_location()
+            if location and location.timestamp:
+                age = datetime.now(timezone.utc) - location.timestamp
+                print(f"Location age: {age.total_seconds():.0f}s")
+        """
+        import asyncio
+
+        # Get current timestamp for comparison
+        current_location = await self._client.get_current_location(self.id)
+        initial_timestamp = current_location.timestamp if current_location else None
+
+        # Send locate command
+        try:
+            await self.send_command("locate")
+        except Exception:
+            # Even if command fails, still try to get location
+            pass
+
+        # Poll for fresh data
+        start_time = datetime.now(timezone.utc)
+        while True:
+            elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+            if elapsed >= max_wait:
+                break
+
+            await asyncio.sleep(poll_interval)
+
+            # Fetch fresh location
+            location = await self._client.get_current_location(self.id)
+            if location and location.timestamp:
+                # Check if we got fresh data
+                if initial_timestamp is None or location.timestamp > initial_timestamp:
+                    # Enrich with telemetry from latest event
+                    events = await self._client.get_locations(self.id, limit=1)
+                    if events:
+                        _enrich_location_from_event(location, events[0])
+                    self._cached_location = location
+                    self._last_refresh = datetime.now(timezone.utc)
+                    return location
+
+        # Timeout - return whatever we have
+        await self.refresh(force=True)
+        return self._cached_location
+
     async def lock(
         self,
         *,

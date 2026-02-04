@@ -129,6 +129,45 @@ async for location in device.get_history(limit=100):
     print(f"{location.timestamp}: {location.latitude}, {location.longitude}")
 ```
 
+### Handling Stale Location Data
+
+The Spireon REST API may return stale location data (30-76+ minutes old). This is
+because devices report location periodically, not continuously. The mobile app
+gets fresh data by sending a "locate" command to request an on-demand update.
+
+```python
+from datetime import datetime, timezone
+
+# Option 1: Request fresh location and wait (recommended)
+# This sends a "locate" command and polls until fresh data arrives
+location = await device.get_fresh_location(
+    poll_interval=10.0,  # Check every 10 seconds
+    max_wait=120.0       # Wait up to 2 minutes
+)
+if location and location.timestamp:
+    age = (datetime.now(timezone.utc) - location.timestamp).total_seconds()
+    print(f"Location age: {age:.0f} seconds")
+
+# Option 2: Manual locate command (for async workflows)
+await device.request_location_update()  # Sends "locate" command
+# ... do other work ...
+await asyncio.sleep(30)  # Wait for device to respond
+location = await device.get_location(force=True)  # Fetch updated location
+```
+
+For debugging location freshness issues, use the troubleshooting script:
+
+```bash
+# Show current location ages
+python scripts/poll_locations.py
+
+# Request fresh location and monitor for updates
+python scripts/poll_locations.py --locate
+
+# Poll continuously every 30 seconds
+python scripts/poll_locations.py --poll 30
+```
+
 ## API Reference
 
 ### LoJackClient
@@ -176,6 +215,7 @@ device.cached_location  # Optional[Location]
 # Methods
 await device.refresh(force=True)
 location = await device.get_location(force=False)
+location = await device.get_fresh_location(poll_interval=10, max_wait=120)  # Request + wait
 async for loc in device.get_history(limit=100):
     ...
 await device.lock(message="...", passcode="...")
