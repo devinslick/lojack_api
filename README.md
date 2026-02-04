@@ -95,7 +95,7 @@ async def setup(hass_session: ClientSession, username, password):
 
 ### Working with Vehicles
 
-Vehicles have additional properties and commands:
+Vehicles have additional properties:
 
 ```python
 from lojack_api import Vehicle
@@ -108,20 +108,12 @@ async def vehicle_example(client):
             print(f"Vehicle: {device.name}")
             print(f"  VIN: {device.vin}")
             print(f"  Make: {device.make} {device.model} ({device.year})")
-
-            # Vehicle-specific commands
-            await device.start_engine()
-            await device.honk_horn()
-            await device.flash_lights()
 ```
 
 ### Device Commands
 
 ```python
-# All devices support these commands
-await device.lock(message="Please return this device")
-await device.unlock()
-await device.ring(duration=30)
+# Request location update
 await device.request_location_update()
 
 # Get location history
@@ -232,11 +224,7 @@ location = await device.get_location(force=False)
 baseline_ts = await device.request_fresh_location()  # Non-blocking locate + baseline
 async for loc in device.get_history(limit=100):
     ...
-await device.lock(message="...", passcode="...")
-await device.unlock()
-await device.ring(duration=30)
 await device.request_location_update()  # Fire-and-forget locate command
-await device.send_command("custom_command")
 
 # Properties
 device.location_timestamp  # Cached location timestamp for freshness checks
@@ -244,7 +232,7 @@ device.location_timestamp  # Cached location timestamp for freshness checks
 
 ### Vehicle (extends Device)
 
-Additional properties and methods for vehicles.
+Additional properties for vehicles.
 
 ```python
 # Properties
@@ -254,12 +242,6 @@ vehicle.model         # Optional[str]
 vehicle.year          # Optional[int]
 vehicle.license_plate # Optional[str]
 vehicle.odometer      # Optional[float]
-
-# Methods
-await vehicle.start_engine()
-await vehicle.stop_engine()
-await vehicle.honk_horn()
-await vehicle.flash_lights()
 ```
 
 ### Data Models
@@ -308,7 +290,6 @@ from lojack_api import (
     TimeoutError,          # Request timeouts
     DeviceNotFoundError,   # Device not found (has device_id)
     CommandError,          # Command failed (has command, device_id)
-    InvalidParameterError, # Invalid parameter (has parameter, value)
 )
 ```
 

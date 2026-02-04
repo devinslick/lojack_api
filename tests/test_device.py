@@ -4,62 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from lojack_api.device import Device, Vehicle, _is_valid_passcode, _sanitize_message
-from lojack_api.exceptions import InvalidParameterError
+from lojack_api.device import Device, Vehicle
 from lojack_api.models import Location
-
-
-class TestSanitizeMessage:
-    """Tests for message sanitization."""
-
-    def test_basic_message(self):
-        """Test basic message passes through."""
-        assert _sanitize_message("Hello World") == "Hello World"
-
-    def test_removes_dangerous_chars(self):
-        """Test dangerous characters are removed."""
-        result = _sanitize_message('Hello "World"; DROP TABLE')
-        assert '"' not in result
-        assert ";" not in result
-
-    def test_normalizes_whitespace(self):
-        """Test whitespace is normalized."""
-        result = _sanitize_message("Hello   \n  World")
-        assert result == "Hello World"
-
-    def test_truncates_long_message(self):
-        """Test long messages are truncated."""
-        long_msg = "A" * 200
-        result = _sanitize_message(long_msg)
-        assert len(result) == 120
-
-    def test_custom_max_length(self):
-        """Test custom max length."""
-        result = _sanitize_message("AAAAAAAAAA", max_length=5)
-        assert len(result) == 5
-
-
-class TestIsValidPasscode:
-    """Tests for passcode validation."""
-
-    def test_valid_alphanumeric(self):
-        """Test valid alphanumeric passcodes."""
-        assert _is_valid_passcode("abc123")
-        assert _is_valid_passcode("ABC123")
-        assert _is_valid_passcode("1234567890")
-
-    def test_invalid_with_spaces(self):
-        """Test passcodes with spaces are invalid."""
-        assert not _is_valid_passcode("abc 123")
-
-    def test_invalid_with_special_chars(self):
-        """Test passcodes with special characters are invalid."""
-        assert not _is_valid_passcode("abc@123")
-        assert not _is_valid_passcode("abc!123")
-
-    def test_invalid_with_unicode(self):
-        """Test passcodes with unicode are invalid."""
-        assert not _is_valid_passcode("abc123\u00e9")
 
 
 class TestDevice:
@@ -193,58 +139,6 @@ class TestDevice:
         assert result is True
         mock_client.send_command.assert_called_with(device.id, "test_command")
 
-    @pytest.mark.asyncio
-    async def test_lock(self, device, mock_client):
-        """Test lock command."""
-        result = await device.lock()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(device.id, "lock")
-
-    @pytest.mark.asyncio
-    async def test_lock_with_message(self, device, mock_client):
-        """Test lock command with message."""
-        result = await device.lock(message="Please return")
-
-        assert result is True
-        mock_client.send_command.assert_called_with(device.id, "lock Please return")
-
-    @pytest.mark.asyncio
-    async def test_lock_invalid_passcode(self, device, mock_client):
-        """Test lock with invalid passcode."""
-        with pytest.raises(InvalidParameterError, match="passcode"):
-            await device.lock(passcode="invalid passcode!")
-
-    @pytest.mark.asyncio
-    async def test_unlock(self, device, mock_client):
-        """Test unlock command."""
-        result = await device.unlock()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(device.id, "unlock")
-
-    @pytest.mark.asyncio
-    async def test_ring(self, device, mock_client):
-        """Test ring command."""
-        result = await device.ring()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(device.id, "ring")
-
-    @pytest.mark.asyncio
-    async def test_ring_with_duration(self, device, mock_client):
-        """Test ring command with duration."""
-        result = await device.ring(duration=30)
-
-        assert result is True
-        mock_client.send_command.assert_called_with(device.id, "ring 30")
-
-    @pytest.mark.asyncio
-    async def test_ring_invalid_duration(self, device, mock_client):
-        """Test ring with invalid duration."""
-        with pytest.raises(InvalidParameterError, match="duration"):
-            await device.ring(duration=500)
-
     def test_repr(self, device):
         """Test string representation."""
         repr_str = repr(device)
@@ -276,38 +170,6 @@ class TestVehicle:
         assert vehicle.model == vehicle_info.model
         assert vehicle.year == vehicle_info.year
         assert vehicle.license_plate == vehicle_info.license_plate
-
-    @pytest.mark.asyncio
-    async def test_start_engine(self, vehicle, mock_client):
-        """Test start engine command."""
-        result = await vehicle.start_engine()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(vehicle.id, "start")
-
-    @pytest.mark.asyncio
-    async def test_stop_engine(self, vehicle, mock_client):
-        """Test stop engine command."""
-        result = await vehicle.stop_engine()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(vehicle.id, "stop")
-
-    @pytest.mark.asyncio
-    async def test_honk_horn(self, vehicle, mock_client):
-        """Test honk horn command."""
-        result = await vehicle.honk_horn()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(vehicle.id, "honk")
-
-    @pytest.mark.asyncio
-    async def test_flash_lights(self, vehicle, mock_client):
-        """Test flash lights command."""
-        result = await vehicle.flash_lights()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(vehicle.id, "flash")
 
     def test_repr(self, vehicle):
         """Test string representation."""
