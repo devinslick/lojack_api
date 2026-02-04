@@ -135,27 +135,41 @@ The Spireon REST API may return stale location data (30-76+ minutes old). This i
 because devices report location periodically, not continuously. The mobile app
 gets fresh data by sending a "locate" command to request an on-demand update.
 
+#### For Home Assistant Integrations (Non-blocking)
+
+Use the non-blocking pattern that works with HA's coordinator:
+
 ```python
 from datetime import datetime, timezone
 
-# Option 1: Request fresh location and wait (recommended)
-# This sends a "locate" command and polls until fresh data arrives
-location = await device.get_fresh_location(
-    poll_interval=10.0,  # Check every 10 seconds
-    max_wait=120.0       # Wait up to 2 minutes
-)
+# In a service call or button handler - request fresh location
+baseline_ts = await device.request_fresh_location()  # Sends "locate", returns immediately
+
+# In your DataUpdateCoordinator's _async_update_data method:
+location = await device.get_location(force=True)
 if location and location.timestamp:
     age = (datetime.now(timezone.utc) - location.timestamp).total_seconds()
-    print(f"Location age: {age:.0f} seconds")
+    # Fresh data typically arrives within 30-60 seconds after locate command
+```
 
-# Option 2: Manual locate command (for async workflows)
+The `request_fresh_location()` method:
+- Sends the "locate" command to the device
+- Returns the baseline timestamp immediately (no blocking)
+- Device responds asynchronously; fresh data appears in subsequent polls
+
+#### For Scripts and CLI Tools
+
+For non-HA use cases where blocking is acceptable:
+
+```python
 await device.request_location_update()  # Sends "locate" command
-# ... do other work ...
 await asyncio.sleep(30)  # Wait for device to respond
 location = await device.get_location(force=True)  # Fetch updated location
 ```
 
-For debugging location freshness issues, use the troubleshooting script:
+#### Troubleshooting Script
+
+For debugging location freshness issues:
 
 ```bash
 # Show current location ages
@@ -215,14 +229,17 @@ device.cached_location  # Optional[Location]
 # Methods
 await device.refresh(force=True)
 location = await device.get_location(force=False)
-location = await device.get_fresh_location(poll_interval=10, max_wait=120)  # Request + wait
+baseline_ts = await device.request_fresh_location()  # Non-blocking locate + baseline
 async for loc in device.get_history(limit=100):
     ...
 await device.lock(message="...", passcode="...")
 await device.unlock()
 await device.ring(duration=30)
-await device.request_location_update()
+await device.request_location_update()  # Fire-and-forget locate command
 await device.send_command("custom_command")
+
+# Properties
+device.location_timestamp  # Cached location timestamp for freshness checks
 ```
 
 ### Vehicle (extends Device)

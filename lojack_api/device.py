@@ -171,74 +171,52 @@ class Device:
         """
         return await self.send_command("locate")
 
-    async def get_fresh_location(
-        self,
-        *,
-        poll_interval: float = 10.0,
-        max_wait: float = 120.0,
-    ) -> Location | None:
-        """Request a fresh location update and wait for the device to respond.
+    async def request_fresh_location(self) -> datetime | None:
+        """Request a fresh location update from the device (non-blocking).
 
-        This method sends a "locate" command to the device, then polls
-        until fresh location data is received or the timeout is reached.
+        Sends a "locate" command and returns the current location timestamp
+        for later comparison. Use this with subsequent `get_location(force=True)`
+        calls to detect when fresh data arrives.
 
-        The Spireon REST API often returns stale location data (30-76+ minutes
-        old). This method mimics the mobile app behavior by requesting an
-        on-demand location update.
-
-        Args:
-            poll_interval: Seconds between location checks (default: 10).
-            max_wait: Maximum seconds to wait for fresh data (default: 120).
+        This is the recommended approach for Home Assistant integrations:
+        1. Call `request_fresh_location()` to send the locate command
+        2. On subsequent coordinator updates, call `get_location(force=True)`
+        3. Compare timestamps to detect fresh data
 
         Returns:
-            Fresh Location if received within timeout, or the latest
-            available location if timeout is reached.
+            The current location timestamp (before the locate command),
+            or None if no location is available. Use this to detect when
+            fresh data arrives in subsequent polls.
 
-        Example:
-            # Get fresh location (may take up to 2 minutes)
-            location = await device.get_fresh_location()
-            if location and location.timestamp:
-                age = datetime.now(timezone.utc) - location.timestamp
-                print(f"Location age: {age.total_seconds():.0f}s")
+        Example (Home Assistant pattern):
+            # In a service call or button press handler:
+            baseline_ts = await device.request_fresh_location()
+
+            # In your coordinator's _async_update_data:
+            location = await device.get_location(force=True)
+            if location and baseline_ts and location.timestamp > baseline_ts:
+                # Fresh data has arrived
+                pass
         """
-        import asyncio
-
         # Get current timestamp for comparison
         current_location = await self._client.get_current_location(self.id)
-        initial_timestamp = current_location.timestamp if current_location else None
+        baseline_timestamp = current_location.timestamp if current_location else None
 
-        # Send locate command
+        # Send locate command (fire and forget)
         try:
             await self.send_command("locate")
         except Exception:
-            # Even if command fails, still try to get location
+            # Command may fail, but we still return the baseline
             pass
 
-        # Poll for fresh data
-        start_time = datetime.now(timezone.utc)
-        while True:
-            elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
-            if elapsed >= max_wait:
-                break
+        return baseline_timestamp
 
-            await asyncio.sleep(poll_interval)
-
-            # Fetch fresh location
-            location = await self._client.get_current_location(self.id)
-            if location and location.timestamp:
-                # Check if we got fresh data
-                if initial_timestamp is None or location.timestamp > initial_timestamp:
-                    # Enrich with telemetry from latest event
-                    events = await self._client.get_locations(self.id, limit=1)
-                    if events:
-                        _enrich_location_from_event(location, events[0])
-                    self._cached_location = location
-                    self._last_refresh = datetime.now(timezone.utc)
-                    return location
-
-        # Timeout - return whatever we have
-        await self.refresh(force=True)
-        return self._cached_location
+    @property
+    def location_timestamp(self) -> datetime | None:
+        """Return the timestamp of the cached location, if available."""
+        if self._cached_location:
+            return self._cached_location.timestamp
+        return None
 
     async def lock(
         self,
