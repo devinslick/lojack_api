@@ -56,17 +56,11 @@ def format_age(delta_seconds: float) -> str:
 
 
 async def get_location_timestamp(client: LoJackClient, device_id: str) -> datetime | None:
-    """Get the location timestamp directly from the API."""
+    """Get the location timestamp using the public API."""
     try:
-        asset_raw = await client._services_transport.request(
-            "GET", f"/assets/{device_id}", headers=await client._get_headers()
-        )
-        if isinstance(asset_raw, dict):
-            ts_str = asset_raw.get("locationLastReported")
-            if ts_str:
-                # Parse timestamp like "2026-02-04T00:31:38.515+0000"
-                from lojack_api.models import _parse_timestamp
-                return _parse_timestamp(ts_str)
+        location = await client.get_current_location(device_id)
+        if location:
+            return location.timestamp
     except Exception:
         pass
     return None
