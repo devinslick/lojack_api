@@ -364,6 +364,265 @@ class VehicleInfo(DeviceInfo):
         return vehicle
 
 
+@dataclass
+class Geofence:
+    """A geofence (geographic boundary) for an asset.
+
+    Geofences define circular areas that trigger alerts when the
+    asset enters or exits the boundary.
+
+    Attributes:
+        id: Unique geofence identifier.
+        name: Display name for the geofence.
+        latitude: Center point latitude.
+        longitude: Center point longitude.
+        radius: Radius in meters.
+        address: Optional address description.
+        active: Whether the geofence is active.
+        asset_id: ID of the asset this geofence belongs to.
+        raw: Original API response data.
+    """
+
+    id: str
+    name: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    radius: float | None = None
+    address: str | None = None
+    active: bool = True
+    asset_id: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any], asset_id: str | None = None) -> Geofence:
+        """Parse a geofence from API response data."""
+        # Handle nested location/coordinates
+        location = data.get("location", {})
+        coords = location.get("coordinates", {}) or data.get("coordinates", {})
+
+        lat = (
+            coords.get("lat")
+            or coords.get("latitude")
+            or location.get("lat")
+            or location.get("latitude")
+            or data.get("lat")
+            or data.get("latitude")
+        )
+        lng = (
+            coords.get("lng")
+            or coords.get("lon")
+            or coords.get("longitude")
+            or location.get("lng")
+            or location.get("lon")
+            or location.get("longitude")
+            or data.get("lng")
+            or data.get("lon")
+            or data.get("longitude")
+        )
+
+        # Parse address from nested object or string
+        addr = location.get("address") or data.get("address")
+        if isinstance(addr, dict):
+            parts = []
+            if addr.get("line1"):
+                parts.append(addr["line1"])
+            if addr.get("city"):
+                parts.append(addr["city"])
+            state_zip = []
+            if addr.get("stateOrProvince"):
+                state_zip.append(addr["stateOrProvince"])
+            if addr.get("postalCode"):
+                state_zip.append(addr["postalCode"])
+            if state_zip:
+                parts.append(" ".join(state_zip))
+            address = ", ".join(parts) if parts else None
+        elif isinstance(addr, str):
+            address = addr
+        else:
+            address = data.get("formattedAddress")
+
+        # Parse radius
+        radius = data.get("radius") or location.get("radius")
+        if radius is not None:
+            try:
+                radius = float(radius)
+            except (ValueError, TypeError):
+                radius = None
+
+        return cls(
+            id=data.get("id") or data.get("geofenceId") or "",
+            name=data.get("name") or data.get("label"),
+            latitude=lat,
+            longitude=lng,
+            radius=radius,
+            address=address,
+            active=data.get("active", True),
+            asset_id=asset_id or data.get("assetId"),
+            raw=data,
+        )
+
+    def to_api_payload(self) -> dict[str, Any]:
+        """Convert to API payload for create/update operations."""
+        payload: dict[str, Any] = {}
+
+        if self.name:
+            payload["name"] = self.name
+
+        if self.latitude is not None and self.longitude is not None:
+            payload["location"] = {
+                "coordinates": {
+                    "lat": self.latitude,
+                    "lng": self.longitude,
+                }
+            }
+            if self.radius is not None:
+                payload["location"]["radius"] = self.radius
+            if self.address:
+                payload["location"]["address"] = {"line1": self.address}
+
+        payload["active"] = self.active
+
+        return payload
+
+
+@dataclass
+class MaintenanceItem:
+    """A single maintenance service item.
+
+    Attributes:
+        name: Service name (e.g., "Oil Change", "Tire Rotation").
+        description: Detailed description of the service.
+        severity: Severity level (e.g., "NORMAL", "WARNING", "CRITICAL").
+        mileage_due: Mileage at which service is due.
+        months_due: Months until service is due.
+        action: Recommended action.
+        raw: Original API response data.
+    """
+
+    name: str
+    description: str | None = None
+    severity: str | None = None
+    mileage_due: float | None = None
+    months_due: int | None = None
+    action: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> MaintenanceItem:
+        """Parse a maintenance item from API response data."""
+        mileage = data.get("mileageDue") or data.get("dueMileage")
+        if mileage is not None:
+            try:
+                mileage = float(mileage)
+            except (ValueError, TypeError):
+                mileage = None
+
+        months = data.get("monthsDue") or data.get("dueMonths")
+        if months is not None:
+            try:
+                months = int(months)
+            except (ValueError, TypeError):
+                months = None
+
+        return cls(
+            name=data.get("name") or data.get("serviceName") or "",
+            description=data.get("description") or data.get("serviceDescription"),
+            severity=data.get("severity") or data.get("level"),
+            mileage_due=mileage,
+            months_due=months,
+            action=data.get("action") or data.get("recommendedAction"),
+            raw=data,
+        )
+
+
+@dataclass
+class MaintenanceSchedule:
+    """Vehicle maintenance schedule.
+
+    Attributes:
+        vin: Vehicle identification number.
+        items: List of maintenance items.
+        raw: Original API response data.
+    """
+
+    vin: str
+    items: list[MaintenanceItem] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any], vin: str = "") -> MaintenanceSchedule:
+        """Parse a maintenance schedule from API response data."""
+        items: list[MaintenanceItem] = []
+
+        # Items may be nested in various ways
+        raw_items = (
+            data.get("items")
+            or data.get("services")
+            or data.get("maintenanceItems")
+            or data.get("schedule")
+            or []
+        )
+
+        for item_data in raw_items:
+            if isinstance(item_data, dict):
+                items.append(MaintenanceItem.from_api(item_data))
+
+        return cls(
+            vin=vin or data.get("vin") or "",
+            items=items,
+            raw=data,
+        )
+
+
+@dataclass
+class RepairOrder:
+    """A vehicle repair order.
+
+    Attributes:
+        id: Unique repair order identifier.
+        vin: Vehicle identification number.
+        asset_id: Associated asset ID.
+        status: Order status (e.g., "OPEN", "CLOSED").
+        open_date: When the order was opened.
+        close_date: When the order was closed (if applicable).
+        description: Description of the repair.
+        total_amount: Total cost of repairs.
+        raw: Original API response data.
+    """
+
+    id: str
+    vin: str | None = None
+    asset_id: str | None = None
+    status: str | None = None
+    open_date: datetime | None = None
+    close_date: datetime | None = None
+    description: str | None = None
+    total_amount: float | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> RepairOrder:
+        """Parse a repair order from API response data."""
+        total = data.get("totalAmount") or data.get("total")
+        if total is not None:
+            try:
+                total = float(total)
+            except (ValueError, TypeError):
+                total = None
+
+        return cls(
+            id=data.get("id") or data.get("repairOrderId") or "",
+            vin=data.get("vin"),
+            asset_id=data.get("assetId"),
+            status=data.get("status"),
+            open_date=_parse_timestamp(data.get("openDate") or data.get("createdDate")),
+            close_date=_parse_timestamp(data.get("closeDate") or data.get("closedDate")),
+            description=data.get("description") or data.get("notes"),
+            total_amount=total,
+            raw=data,
+        )
+
+
 def _parse_gps_accuracy(
     accuracy: Any, hdop: Any = None, gps_quality: str | None = None
 ) -> float | None:

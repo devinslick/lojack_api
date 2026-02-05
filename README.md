@@ -95,7 +95,7 @@ async def setup(hass_session: ClientSession, username, password):
 
 ### Working with Vehicles
 
-Vehicles have additional properties and commands:
+Vehicles have additional properties:
 
 ```python
 from lojack_api import Vehicle
@@ -108,25 +108,178 @@ async def vehicle_example(client):
             print(f"Vehicle: {device.name}")
             print(f"  VIN: {device.vin}")
             print(f"  Make: {device.make} {device.model} ({device.year})")
-
-            # Vehicle-specific commands
-            await device.start_engine()
-            await device.honk_horn()
-            await device.flash_lights()
 ```
 
-### Device Commands
+### Requesting Fresh Location Data
+
+The Spireon REST API may return stale location data (30-76+ minutes old) because
+devices report periodically, not continuously. Two methods are available to
+request on-demand location updates:
+
+#### Method Comparison
+
+| Method | Returns | Use Case |
+|--------|---------|----------|
+| `request_location_update()` | `bool` | Fire-and-forget; scripts, simple polling |
+| `request_fresh_location()` | `datetime \| None` | Non-blocking with baseline; Home Assistant |
+
+#### `request_location_update()` -> bool
+
+Sends a "locate" command to the device. Returns `True` if the command was
+accepted by the API. This is a fire-and-forget method - you must poll
+separately to detect when fresh data arrives.
 
 ```python
-# All devices support these commands
-await device.lock(message="Please return this device")
-await device.unlock()
-await device.ring(duration=30)
-await device.request_location_update()
+# Simple usage - send command and poll manually
+success = await device.request_location_update()
+if success:
+    await asyncio.sleep(30)  # Wait for device to respond
+    location = await device.get_location(force=True)
+```
 
+#### `request_fresh_location()` -> datetime | None
+
+Sends a "locate" command and returns the current location timestamp as a
+baseline for comparison. This is the recommended method for Home Assistant
+integrations because it's non-blocking and provides a reference point to
+detect when fresh data arrives.
+
+```python
+from datetime import datetime, timezone
+
+# In a service call or button handler
+baseline_ts = await device.request_fresh_location()
+
+# Later, in your DataUpdateCoordinator's _async_update_data:
+location = await device.get_location(force=True)
+if location and location.timestamp:
+    # Check if we received fresh data since the locate command
+    if baseline_ts and location.timestamp > baseline_ts:
+        print("Fresh location received!")
+    age = (datetime.now(timezone.utc) - location.timestamp).total_seconds()
+```
+
+**Returns:**
+- `datetime` - The location timestamp before the locate command was sent
+- `None` - If no prior location was available
+
+#### Location History
+
+```python
 # Get location history
 async for location in device.get_history(limit=100):
     print(f"{location.timestamp}: {location.latitude}, {location.longitude}")
+```
+
+#### Troubleshooting Script
+
+For debugging location freshness issues:
+
+```bash
+# Show current location ages
+python scripts/poll_locations.py
+
+# Request fresh location and monitor for updates
+python scripts/poll_locations.py --locate
+
+# Poll continuously every 30 seconds
+python scripts/poll_locations.py --poll 30
+```
+
+### Geofences
+
+Geofences define circular areas that can trigger alerts when a device enters
+or exits the boundary.
+
+```python
+# List all geofences for a device
+geofences = await device.list_geofences()
+for geofence in geofences:
+    print(f"{geofence.name}: {geofence.latitude}, {geofence.longitude} (r={geofence.radius}m)")
+
+# Create a geofence
+geofence = await device.create_geofence(
+    name="Home",
+    latitude=32.8427,
+    longitude=-97.0715,
+    radius=100.0,  # meters
+    address="123 Main St"
+)
+
+# Update a geofence
+await device.update_geofence(
+    geofence.id,
+    name="Home Base",
+    radius=150.0
+)
+
+# Delete a geofence
+await device.delete_geofence(geofence.id)
+```
+
+### Updating Device Information
+
+Update device/vehicle metadata:
+
+```python
+# Update device name
+await device.update(name="My Tracker")
+
+# For vehicles, update additional fields
+await vehicle.update(
+    name="Family Car",
+    odometer=51000.0,
+    color="Blue"
+)
+```
+
+### Maintenance Schedules (Vehicles)
+
+Get maintenance schedule information for vehicles with a VIN:
+
+```python
+# Get maintenance schedule
+schedule = await vehicle.get_maintenance_schedule()
+if schedule:
+    print(f"Maintenance items for VIN {schedule.vin}:")
+    for item in schedule.items:
+        print(f"  {item.name}: {item.severity}")
+        if item.mileage_due:
+            print(f"    Due at: {item.mileage_due} miles")
+        if item.action:
+            print(f"    Action: {item.action}")
+```
+
+### Repair Orders (Vehicles)
+
+Get repair order history for vehicles:
+
+```python
+# Get repair orders
+orders = await vehicle.get_repair_orders()
+for order in orders:
+    print(f"Order {order.id}: {order.status}")
+    if order.description:
+        print(f"  Description: {order.description}")
+    if order.total_amount:
+        print(f"  Total: ${order.total_amount:.2f}")
+    if order.open_date:
+        print(f"  Opened: {order.open_date.isoformat()}")
+```
+
+### User Information
+
+Get information about the authenticated user and accounts:
+
+```python
+# Get user info
+user_info = await client.get_user_info()
+if user_info:
+    print(f"User: {user_info.get('email')}")
+
+# Get accounts
+accounts = await client.get_accounts()
+print(f"Found {len(accounts)} account(s)")
 ```
 
 ## API Reference
@@ -174,15 +327,27 @@ device.last_seen     # Optional[datetime]
 device.cached_location  # Optional[Location]
 
 # Methods
-await device.refresh(force=True)
-location = await device.get_location(force=False)
-async for loc in device.get_history(limit=100):
+await device.refresh(force=True)              # Refresh cached location from API
+location = await device.get_location(force=False)  # Get location (from cache or API)
+async for loc in device.get_history(limit=100):    # Iterate location history
     ...
-await device.lock(message="...", passcode="...")
-await device.unlock()
-await device.ring(duration=30)
-await device.request_location_update()
-await device.send_command("custom_command")
+
+# Location update methods
+success = await device.request_location_update()   # bool - fire-and-forget locate
+baseline = await device.request_fresh_location()   # datetime|None - locate + baseline
+
+# Device updates
+await device.update(name="New Name")               # Update device info
+
+# Geofence management
+geofences = await device.list_geofences()          # List[Geofence]
+geofence = await device.get_geofence(geofence_id)  # Geofence|None
+geofence = await device.create_geofence(name=..., latitude=..., longitude=..., radius=...)
+await device.update_geofence(geofence_id, name=..., radius=...)
+await device.delete_geofence(geofence_id)
+
+# Properties
+device.location_timestamp  # datetime|None - cached location's timestamp
 ```
 
 ### Vehicle (extends Device)
@@ -198,11 +363,12 @@ vehicle.year          # Optional[int]
 vehicle.license_plate # Optional[str]
 vehicle.odometer      # Optional[float]
 
-# Methods
-await vehicle.start_engine()
-await vehicle.stop_engine()
-await vehicle.honk_horn()
-await vehicle.flash_lights()
+# Methods (extends Device methods)
+await vehicle.update(name=..., make=..., model=..., year=..., vin=..., odometer=...)
+
+# Maintenance and repair methods
+schedule = await vehicle.get_maintenance_schedule()  # MaintenanceSchedule|None
+orders = await vehicle.get_repair_orders()           # List[RepairOrder]
 ```
 
 ### Data Models
@@ -237,6 +403,49 @@ location.event_id        # Optional[str] - Unique event identifier
 
 # Location - Raw data
 location.raw        # Dict[str, Any] - Original API response
+
+# Geofence
+from lojack_api import Geofence
+
+geofence.id         # str - Unique identifier
+geofence.name       # Optional[str] - Display name
+geofence.latitude   # Optional[float] - Center latitude
+geofence.longitude  # Optional[float] - Center longitude
+geofence.radius     # Optional[float] - Radius in meters
+geofence.address    # Optional[str] - Address description
+geofence.active     # bool - Whether geofence is active
+geofence.asset_id   # Optional[str] - Associated device ID
+geofence.raw        # Dict[str, Any] - Original API response
+
+# Maintenance models
+from lojack_api import MaintenanceItem, MaintenanceSchedule
+
+# MaintenanceItem - Single service item
+item.name           # str - Service name (e.g., "Oil Change")
+item.description    # Optional[str] - Detailed description
+item.severity       # Optional[str] - Severity level ("NORMAL", "WARNING", "CRITICAL")
+item.mileage_due    # Optional[float] - Mileage at which service is due
+item.months_due     # Optional[int] - Months until service is due
+item.action         # Optional[str] - Recommended action
+item.raw            # Dict[str, Any] - Original API response
+
+# MaintenanceSchedule - Collection of maintenance items
+schedule.vin        # str - Vehicle VIN
+schedule.items      # List[MaintenanceItem] - Scheduled services
+schedule.raw        # Dict[str, Any] - Original API response
+
+# RepairOrder - Service/repair record
+from lojack_api import RepairOrder
+
+order.id            # str - Unique repair order identifier
+order.vin           # Optional[str] - Vehicle VIN
+order.asset_id      # Optional[str] - Associated asset ID
+order.status        # Optional[str] - Order status ("OPEN", "CLOSED")
+order.open_date     # Optional[datetime] - When order was opened
+order.close_date    # Optional[datetime] - When order was closed
+order.description   # Optional[str] - Description of repair
+order.total_amount  # Optional[float] - Total cost
+order.raw           # Dict[str, Any] - Original API response
 ```
 
 ### Exceptions
@@ -251,7 +460,6 @@ from lojack_api import (
     TimeoutError,          # Request timeouts
     DeviceNotFoundError,   # Device not found (has device_id)
     CommandError,          # Command failed (has command, device_id)
-    InvalidParameterError, # Invalid parameter (has parameter, value)
 )
 ```
 

@@ -212,3 +212,162 @@ class TestAuthManager:
         assert auth._user_id is None
         assert auth._expires_at is None
         assert not auth.is_authenticated
+
+    def test_app_token_property(self, auth):
+        """Test app_token property."""
+        from lojack_api.auth import DEFAULT_APP_TOKEN
+        assert auth.app_token == DEFAULT_APP_TOKEN
+
+    def test_is_authenticated_with_expired_token(self, auth):
+        """Test is_authenticated returns False for expired token."""
+        auth._access_token = "token"
+        auth._expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        assert not auth.is_authenticated
+
+    def test_is_authenticated_with_valid_token_no_expiry(self, auth):
+        """Test is_authenticated with token but no expiry."""
+        auth._access_token = "token"
+        auth._expires_at = None
+        assert auth.is_authenticated
+
+    def test_export_auth_artifacts_when_not_authenticated(self, auth):
+        """Test export_auth_artifacts returns None when not authenticated."""
+        assert auth.export_auth_artifacts() is None
+
+    def test_get_auth_headers(self, auth):
+        """Test get_auth_headers returns correct headers."""
+        auth._access_token = "test-token"
+        headers = auth.get_auth_headers()
+        assert "X-Nspire-Apptoken" in headers
+        assert "X-Nspire-Usertoken" in headers
+        assert headers["X-Nspire-Usertoken"] == "test-token"
+
+    @pytest.mark.asyncio
+    async def test_login_request_exception(self, auth, transport):
+        """Test login handles request exceptions."""
+        transport.request.side_effect = Exception("Network error")
+
+        with pytest.raises(AuthenticationError, match="Login failed"):
+            await auth.login()
+
+    @pytest.mark.asyncio
+    async def test_login_non_dict_response(self, auth, transport):
+        """Test login handles non-dict response."""
+        transport.request.return_value = "invalid response"
+
+        with pytest.raises(AuthenticationError, match="Invalid login response"):
+            await auth.login()
+
+    @pytest.mark.asyncio
+    async def test_login_with_invalid_expires_in(self, auth, transport):
+        """Test login handles invalid expiresIn value."""
+        transport.request.return_value = {
+            "token": "new-token",
+            "expiresIn": "invalid",  # Invalid - not a number
+            "userId": "user-123",
+        }
+
+        token = await auth.login()
+
+        # Should still succeed and use default expiry
+        assert token == "new-token"
+        assert auth._expires_at is not None
+
+    @pytest.mark.asyncio
+    async def test_login_without_expires_in(self, auth, transport):
+        """Test login handles missing expiresIn."""
+        transport.request.return_value = {
+            "token": "new-token",
+            "userId": "user-123",
+        }
+
+        token = await auth.login()
+
+        # Should use default 1 hour expiry
+        assert token == "new-token"
+        assert auth._expires_at is not None
+
+    @pytest.mark.asyncio
+    async def test_login_with_access_token_key(self, auth, transport):
+        """Test login handles 'access_token' key instead of 'token'."""
+        transport.request.return_value = {
+            "access_token": "new-token",
+            "expiresIn": 3600,
+            "user_id": "user-123",
+        }
+
+        token = await auth.login()
+
+        assert token == "new-token"
+        assert auth.user_id == "user-123"
+
+    @pytest.mark.asyncio
+    async def test_refresh(self, auth, transport):
+        """Test refresh calls login."""
+        transport.request.return_value = {
+            "token": "refreshed-token",
+            "expiresIn": 3600,
+        }
+
+        token = await auth.refresh()
+
+        assert token == "refreshed-token"
+
+
+class TestAuthArtifactsEdgeCases:
+    """Additional tests for AuthArtifacts edge cases."""
+
+    def test_from_dict_with_invalid_date_string(self):
+        """Test from_dict with invalid date string."""
+        data = {
+            "access_token": "test-token",
+            "expires_at": "not-a-date",
+        }
+        artifacts = AuthArtifacts.from_dict(data)
+        assert artifacts.access_token == "test-token"
+        assert artifacts.expires_at is None
+
+    def test_from_dict_with_datetime_object(self):
+        """Test from_dict with datetime object directly."""
+        expires = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        data = {
+            "access_token": "test-token",
+            "expires_at": expires,
+        }
+        artifacts = AuthArtifacts.from_dict(data)
+        assert artifacts.expires_at == expires
+
+
+class TestGetSpireonHeaders:
+    """Tests for get_spireon_headers function."""
+
+    def test_basic_headers(self):
+        """Test basic headers generation."""
+        from lojack_api.auth import get_spireon_headers
+        headers = get_spireon_headers()
+        assert "X-Nspire-Apptoken" in headers
+        assert "X-Nspire-Correlationid" in headers
+
+    def test_with_user_token(self):
+        """Test headers with user token."""
+        from lojack_api.auth import get_spireon_headers
+        headers = get_spireon_headers(user_token="user-token")
+        assert headers["X-Nspire-Usertoken"] == "user-token"
+
+    def test_with_basic_auth(self):
+        """Test headers with basic auth."""
+        from lojack_api.auth import get_spireon_headers
+        headers = get_spireon_headers(basic_auth="base64-credentials")
+        assert headers["Authorization"] == "Basic base64-credentials"
+
+
+class TestEncodeBasicAuth:
+    """Tests for encode_basic_auth function."""
+
+    def test_encode_basic_auth(self):
+        """Test basic auth encoding."""
+        from lojack_api.auth import encode_basic_auth
+        encoded = encode_basic_auth("user", "pass")
+        import base64
+        decoded = base64.b64decode(encoded).decode("utf-8")
+        assert decoded == "user:pass"

@@ -11,8 +11,14 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from .exceptions import InvalidParameterError
-from .models import DeviceInfo, Location, VehicleInfo
+from .models import (
+    DeviceInfo,
+    Geofence,
+    Location,
+    MaintenanceSchedule,
+    RepairOrder,
+    VehicleInfo,
+)
 
 if TYPE_CHECKING:
     from .api import LoJackClient
@@ -171,66 +177,202 @@ class Device:
         """
         return await self.send_command("locate")
 
-    async def lock(
-        self,
-        *,
-        message: str | None = None,
-        passcode: str | None = None,
-    ) -> bool:
-        """Lock the device.
-
-        Args:
-            message: Optional message to display on the device.
-            passcode: Optional passcode for unlocking.
+    async def lock(self) -> bool:
+        """Lock the device (if supported).
 
         Returns:
-            True if the lock command was accepted.
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
         """
-        command = "lock"
-
-        if message:
-            # Sanitize the message
-            sanitized = _sanitize_message(message)
-            if sanitized:
-                command = f"lock {sanitized}"
-
-        if passcode:
-            if not _is_valid_passcode(passcode):
-                raise InvalidParameterError(
-                    "passcode",
-                    passcode,
-                    "Must be alphanumeric ASCII characters only",
-                )
-
-        return await self.send_command(command)
+        return await self.send_command("lock")
 
     async def unlock(self) -> bool:
-        """Unlock the device.
+        """Unlock the device (if supported).
 
         Returns:
-            True if the unlock command was accepted.
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
         """
         return await self.send_command("unlock")
 
-    async def ring(self, *, duration: int | None = None) -> bool:
-        """Make the device ring/alarm.
-
-        Args:
-            duration: Optional duration in seconds.
+    async def ring(self) -> bool:
+        """Sound the device's alarm/ringer (if supported).
 
         Returns:
-            True if the ring command was accepted.
+            True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
         """
-        command = "ring"
-        if duration is not None:
-            if duration < 1 or duration > 300:
-                raise InvalidParameterError(
-                    "duration",
-                    duration,
-                    "Must be between 1 and 300 seconds",
-                )
-            command = f"ring {duration}"
-        return await self.send_command(command)
+        return await self.send_command("ring")
+
+    async def request_fresh_location(self) -> datetime | None:
+        """Request a fresh location update from the device (non-blocking).
+
+        Sends a "locate" command and returns the current location timestamp
+        for later comparison. Use this with subsequent `get_location(force=True)`
+        calls to detect when fresh data arrives.
+
+        This is the recommended approach for Home Assistant integrations:
+        1. Call `request_fresh_location()` to send the locate command
+        2. On subsequent coordinator updates, call `get_location(force=True)`
+        3. Compare timestamps to detect fresh data
+
+        Returns:
+            The current location timestamp (before the locate command),
+            or None if no location is available. Use this to detect when
+            fresh data arrives in subsequent polls.
+
+        Example (Home Assistant pattern):
+            # In a service call or button press handler:
+            baseline_ts = await device.request_fresh_location()
+
+            # In your coordinator's _async_update_data:
+            location = await device.get_location(force=True)
+            if location and baseline_ts and location.timestamp > baseline_ts:
+                # Fresh data has arrived
+                pass
+        """
+        # Get current timestamp for comparison
+        current_location = await self._client.get_current_location(self.id)
+        baseline_timestamp = current_location.timestamp if current_location else None
+
+        # Send locate command (fire and forget)
+        try:
+            await self.send_command("locate")
+        except Exception:
+            # Command may fail, but we still return the baseline
+            pass
+
+        return baseline_timestamp
+
+    @property
+    def location_timestamp(self) -> datetime | None:
+        """Return the timestamp of the cached location, if available."""
+        if self._cached_location:
+            return self._cached_location.timestamp
+        return None
+
+    async def update(
+        self,
+        *,
+        name: str | None = None,
+        color: str | None = None,
+    ) -> bool:
+        """Update device information.
+
+        Args:
+            name: New name for the device.
+            color: Device color.
+
+        Returns:
+            True if the update was successful.
+        """
+        return await self._client.update_asset(
+            self.id,
+            name=name,
+            color=color,
+        )
+
+    async def list_geofences(self) -> list[Geofence]:
+        """List all geofences for this device.
+
+        Returns:
+            A list of Geofence objects.
+        """
+        return await self._client.list_geofences(self.id)
+
+    async def get_geofence(self, geofence_id: str) -> Geofence | None:
+        """Get a specific geofence.
+
+        Args:
+            geofence_id: The geofence ID.
+
+        Returns:
+            The Geofence, or None if not found.
+        """
+        return await self._client.get_geofence(self.id, geofence_id)
+
+    async def create_geofence(
+        self,
+        *,
+        name: str,
+        latitude: float,
+        longitude: float,
+        radius: float = 100.0,
+        address: str | None = None,
+    ) -> Geofence | None:
+        """Create a new geofence for this device.
+
+        Args:
+            name: Display name for the geofence.
+            latitude: Center point latitude.
+            longitude: Center point longitude.
+            radius: Radius in meters (default: 100).
+            address: Optional address description.
+
+        Returns:
+            The created Geofence, or None if creation failed.
+        """
+        return await self._client.create_geofence(
+            self.id,
+            name=name,
+            latitude=latitude,
+            longitude=longitude,
+            radius=radius,
+            address=address,
+        )
+
+    async def update_geofence(
+        self,
+        geofence_id: str,
+        *,
+        name: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        radius: float | None = None,
+        address: str | None = None,
+        active: bool | None = None,
+    ) -> bool:
+        """Update an existing geofence.
+
+        Args:
+            geofence_id: The geofence ID to update.
+            name: New display name.
+            latitude: New center point latitude.
+            longitude: New center point longitude.
+            radius: New radius in meters.
+            address: New address description.
+            active: Whether the geofence is active.
+
+        Returns:
+            True if the update was successful.
+        """
+        return await self._client.update_geofence(
+            self.id,
+            geofence_id,
+            name=name,
+            latitude=latitude,
+            longitude=longitude,
+            radius=radius,
+            address=address,
+            active=active,
+        )
+
+    async def delete_geofence(self, geofence_id: str) -> bool:
+        """Delete a geofence.
+
+        Args:
+            geofence_id: The geofence ID to delete.
+
+        Returns:
+            True if the deletion was successful.
+        """
+        return await self._client.delete_geofence(self.id, geofence_id)
 
     def __repr__(self) -> str:
         return f"Device(id={self.id!r}, name={self.name!r})"
@@ -292,64 +434,111 @@ class Vehicle(Device):
         """Return the vehicle's odometer reading."""
         return self._vehicle_info.odometer
 
+    async def update(
+        self,
+        *,
+        name: str | None = None,
+        color: str | None = None,
+        make: str | None = None,
+        model: str | None = None,
+        year: int | None = None,
+        vin: str | None = None,
+        odometer: float | None = None,
+    ) -> bool:
+        """Update vehicle information.
+
+        Args:
+            name: New name for the vehicle.
+            color: Vehicle color.
+            make: Vehicle make.
+            model: Vehicle model.
+            year: Vehicle year.
+            vin: Vehicle VIN.
+            odometer: Current odometer reading.
+
+        Returns:
+            True if the update was successful.
+        """
+        return await self._client.update_asset(
+            self.id,
+            name=name,
+            color=color,
+            make=make,
+            model=model,
+            year=year,
+            vin=vin,
+            odometer=odometer,
+        )
+
+    async def get_maintenance_schedule(self) -> MaintenanceSchedule | None:
+        """Get the maintenance schedule for this vehicle.
+
+        Requires the vehicle to have a VIN.
+
+        Returns:
+            MaintenanceSchedule with service items, or None if unavailable.
+        """
+        if not self.vin:
+            return None
+        return await self._client.get_maintenance_schedule(self.vin)
+
+    async def get_repair_orders(self) -> list[RepairOrder]:
+        """Get repair orders for this vehicle.
+
+        Returns:
+            A list of RepairOrder objects.
+        """
+        return await self._client.get_repair_orders(
+            vin=self.vin,
+            asset_id=self.id,
+        )
+
     async def start_engine(self) -> bool:
-        """Remote start the vehicle's engine.
+        """Remote start the vehicle's engine (if supported).
 
         Returns:
             True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
         """
         return await self.send_command("start")
 
     async def stop_engine(self) -> bool:
-        """Remote stop the vehicle's engine.
+        """Remote stop the vehicle's engine (if supported).
 
         Returns:
             True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
         """
         return await self.send_command("stop")
 
     async def honk_horn(self) -> bool:
-        """Honk the vehicle's horn.
+        """Honk the vehicle's horn (if supported).
 
         Returns:
             True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
         """
         return await self.send_command("honk")
 
     async def flash_lights(self) -> bool:
-        """Flash the vehicle's lights.
+        """Flash the vehicle's lights (if supported).
 
         Returns:
             True if the command was accepted.
+
+        Raises:
+            CommandError: If the command fails.
         """
         return await self.send_command("flash")
 
     def __repr__(self) -> str:
         return f"Vehicle(id={self.id!r}, name={self.name!r}, vin={self.vin!r})"
-
-
-def _sanitize_message(message: str, max_length: int = 120) -> str:
-    """Sanitize a message for sending to a device.
-
-    Removes potentially dangerous characters and limits length.
-    """
-    # Normalize whitespace
-    sanitized = " ".join(message.strip().split())
-
-    # Remove potentially dangerous characters
-    for char in ['"', "'", "`", ";", "\\", "\n", "\r"]:
-        sanitized = sanitized.replace(char, "")
-
-    # Limit length
-    if len(sanitized) > max_length:
-        sanitized = sanitized[:max_length]
-
-    return sanitized
-
-
-def _is_valid_passcode(passcode: str) -> bool:
-    """Validate a passcode contains only safe characters."""
-    return all(c.isalnum() and ord(c) < 128 for c in passcode)
 
 
 def _enrich_location_from_event(location: Location, event: Location) -> None:

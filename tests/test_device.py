@@ -1,65 +1,12 @@
 """Tests for device wrapper classes."""
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from lojack_api.device import Device, Vehicle, _is_valid_passcode, _sanitize_message
-from lojack_api.exceptions import InvalidParameterError
+from lojack_api.device import Device, Vehicle, _enrich_location_from_event
 from lojack_api.models import Location
-
-
-class TestSanitizeMessage:
-    """Tests for message sanitization."""
-
-    def test_basic_message(self):
-        """Test basic message passes through."""
-        assert _sanitize_message("Hello World") == "Hello World"
-
-    def test_removes_dangerous_chars(self):
-        """Test dangerous characters are removed."""
-        result = _sanitize_message('Hello "World"; DROP TABLE')
-        assert '"' not in result
-        assert ";" not in result
-
-    def test_normalizes_whitespace(self):
-        """Test whitespace is normalized."""
-        result = _sanitize_message("Hello   \n  World")
-        assert result == "Hello World"
-
-    def test_truncates_long_message(self):
-        """Test long messages are truncated."""
-        long_msg = "A" * 200
-        result = _sanitize_message(long_msg)
-        assert len(result) == 120
-
-    def test_custom_max_length(self):
-        """Test custom max length."""
-        result = _sanitize_message("AAAAAAAAAA", max_length=5)
-        assert len(result) == 5
-
-
-class TestIsValidPasscode:
-    """Tests for passcode validation."""
-
-    def test_valid_alphanumeric(self):
-        """Test valid alphanumeric passcodes."""
-        assert _is_valid_passcode("abc123")
-        assert _is_valid_passcode("ABC123")
-        assert _is_valid_passcode("1234567890")
-
-    def test_invalid_with_spaces(self):
-        """Test passcodes with spaces are invalid."""
-        assert not _is_valid_passcode("abc 123")
-
-    def test_invalid_with_special_chars(self):
-        """Test passcodes with special characters are invalid."""
-        assert not _is_valid_passcode("abc@123")
-        assert not _is_valid_passcode("abc!123")
-
-    def test_invalid_with_unicode(self):
-        """Test passcodes with unicode are invalid."""
-        assert not _is_valid_passcode("abc123\u00e9")
 
 
 class TestDevice:
@@ -193,63 +140,182 @@ class TestDevice:
         assert result is True
         mock_client.send_command.assert_called_with(device.id, "test_command")
 
-    @pytest.mark.asyncio
-    async def test_lock(self, device, mock_client):
-        """Test lock command."""
-        result = await device.lock()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(device.id, "lock")
-
-    @pytest.mark.asyncio
-    async def test_lock_with_message(self, device, mock_client):
-        """Test lock command with message."""
-        result = await device.lock(message="Please return")
-
-        assert result is True
-        mock_client.send_command.assert_called_with(device.id, "lock Please return")
-
-    @pytest.mark.asyncio
-    async def test_lock_invalid_passcode(self, device, mock_client):
-        """Test lock with invalid passcode."""
-        with pytest.raises(InvalidParameterError, match="passcode"):
-            await device.lock(passcode="invalid passcode!")
-
-    @pytest.mark.asyncio
-    async def test_unlock(self, device, mock_client):
-        """Test unlock command."""
-        result = await device.unlock()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(device.id, "unlock")
-
-    @pytest.mark.asyncio
-    async def test_ring(self, device, mock_client):
-        """Test ring command."""
-        result = await device.ring()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(device.id, "ring")
-
-    @pytest.mark.asyncio
-    async def test_ring_with_duration(self, device, mock_client):
-        """Test ring command with duration."""
-        result = await device.ring(duration=30)
-
-        assert result is True
-        mock_client.send_command.assert_called_with(device.id, "ring 30")
-
-    @pytest.mark.asyncio
-    async def test_ring_invalid_duration(self, device, mock_client):
-        """Test ring with invalid duration."""
-        with pytest.raises(InvalidParameterError, match="duration"):
-            await device.ring(duration=500)
-
     def test_repr(self, device):
         """Test string representation."""
         repr_str = repr(device)
         assert "Device" in repr_str
         assert device.id in repr_str
+
+
+class TestDeviceGeofences:
+    """Tests for Device geofence methods."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        client.list_geofences = AsyncMock(return_value=[])
+        client.get_geofence = AsyncMock(return_value=None)
+        client.create_geofence = AsyncMock(return_value=None)
+        client.update_geofence = AsyncMock(return_value=True)
+        client.delete_geofence = AsyncMock(return_value=True)
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    @pytest.mark.asyncio
+    async def test_list_geofences(self, device, mock_client):
+        """Test listing geofences."""
+        await device.list_geofences()
+        mock_client.list_geofences.assert_called_once_with(device.id)
+
+    @pytest.mark.asyncio
+    async def test_get_geofence(self, device, mock_client):
+        """Test getting a geofence."""
+        await device.get_geofence("geo-1")
+        mock_client.get_geofence.assert_called_once_with(device.id, "geo-1")
+
+    @pytest.mark.asyncio
+    async def test_create_geofence(self, device, mock_client):
+        """Test creating a geofence."""
+        await device.create_geofence(
+            name="Home", latitude=32.84, longitude=-97.07, radius=100.0
+        )
+        mock_client.create_geofence.assert_called_once_with(
+            device.id,
+            name="Home",
+            latitude=32.84,
+            longitude=-97.07,
+            radius=100.0,
+            address=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_geofence(self, device, mock_client):
+        """Test updating a geofence."""
+        await device.update_geofence("geo-1", name="Updated")
+        mock_client.update_geofence.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_geofence(self, device, mock_client):
+        """Test deleting a geofence."""
+        await device.delete_geofence("geo-1")
+        mock_client.delete_geofence.assert_called_once_with(device.id, "geo-1")
+
+
+class TestDeviceLocationMethods:
+    """Tests for Device location methods."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        client.get_current_location = AsyncMock(return_value=None)
+        client.get_locations = AsyncMock(return_value=[])
+        client.send_command = AsyncMock(return_value=True)
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    @pytest.mark.asyncio
+    async def test_request_location_update(self, device, mock_client):
+        """Test requesting location update."""
+        result = await device.request_location_update()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(device.id, "locate")
+
+    @pytest.mark.asyncio
+    async def test_lock(self, device, mock_client):
+        """Test lock command."""
+        result = await device.lock()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(device.id, "lock")
+
+    @pytest.mark.asyncio
+    async def test_unlock(self, device, mock_client):
+        """Test unlock command."""
+        result = await device.unlock()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(device.id, "unlock")
+
+    @pytest.mark.asyncio
+    async def test_ring(self, device, mock_client):
+        """Test ring command."""
+        result = await device.ring()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(device.id, "ring")
+
+    @pytest.mark.asyncio
+    async def test_request_fresh_location(self, device, mock_client, location):
+        """Test requesting fresh location."""
+        mock_client.get_current_location.return_value = location
+
+        baseline_ts = await device.request_fresh_location()
+
+        assert baseline_ts == location.timestamp
+        mock_client.send_command.assert_called_once_with(device.id, "locate")
+
+    @pytest.mark.asyncio
+    async def test_request_fresh_location_no_location(self, device, mock_client):
+        """Test requesting fresh location when no current location."""
+        mock_client.get_current_location.return_value = None
+
+        baseline_ts = await device.request_fresh_location()
+
+        assert baseline_ts is None
+        mock_client.send_command.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_request_fresh_location_command_fails(self, device, mock_client, location):
+        """Test requesting fresh location when command fails."""
+        mock_client.get_current_location.return_value = location
+        mock_client.send_command.side_effect = Exception("Command failed")
+
+        # Should not raise, just return baseline
+        baseline_ts = await device.request_fresh_location()
+
+        assert baseline_ts == location.timestamp
+
+    def test_location_timestamp(self, device, location):
+        """Test location_timestamp property."""
+        device._cached_location = location
+        assert device.location_timestamp == location.timestamp
+
+    def test_location_timestamp_none(self, device):
+        """Test location_timestamp when no cached location."""
+        assert device.location_timestamp is None
+
+
+class TestDeviceUpdate:
+    """Tests for Device update method."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        client.update_asset = AsyncMock(return_value=True)
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    @pytest.mark.asyncio
+    async def test_update(self, device, mock_client):
+        """Test updating device."""
+        result = await device.update(name="New Name")
+
+        assert result is True
+        mock_client.update_asset.assert_called_once_with(
+            device.id, name="New Name", color=None
+        )
 
 
 class TestVehicle:
@@ -262,6 +328,9 @@ class TestVehicle:
         client.get_current_location = AsyncMock(return_value=None)
         client.get_locations = AsyncMock(return_value=[])
         client.send_command = AsyncMock(return_value=True)
+        client.update_asset = AsyncMock(return_value=True)
+        client.get_maintenance_schedule = AsyncMock(return_value=None)
+        client.get_repair_orders = AsyncMock(return_value=[])
         return client
 
     @pytest.fixture
@@ -277,41 +346,279 @@ class TestVehicle:
         assert vehicle.year == vehicle_info.year
         assert vehicle.license_plate == vehicle_info.license_plate
 
-    @pytest.mark.asyncio
-    async def test_start_engine(self, vehicle, mock_client):
-        """Test start engine command."""
-        result = await vehicle.start_engine()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(vehicle.id, "start")
-
-    @pytest.mark.asyncio
-    async def test_stop_engine(self, vehicle, mock_client):
-        """Test stop engine command."""
-        result = await vehicle.stop_engine()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(vehicle.id, "stop")
-
-    @pytest.mark.asyncio
-    async def test_honk_horn(self, vehicle, mock_client):
-        """Test honk horn command."""
-        result = await vehicle.honk_horn()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(vehicle.id, "honk")
-
-    @pytest.mark.asyncio
-    async def test_flash_lights(self, vehicle, mock_client):
-        """Test flash lights command."""
-        result = await vehicle.flash_lights()
-
-        assert result is True
-        mock_client.send_command.assert_called_with(vehicle.id, "flash")
-
     def test_repr(self, vehicle):
         """Test string representation."""
         repr_str = repr(vehicle)
         assert "Vehicle" in repr_str
         assert vehicle.id in repr_str
         assert vehicle.vin in repr_str
+
+    @pytest.mark.asyncio
+    async def test_update(self, vehicle, mock_client):
+        """Test updating vehicle."""
+        result = await vehicle.update(name="New Name", odometer=50000.0)
+
+        assert result is True
+        mock_client.update_asset.assert_called_once()
+        call_args = mock_client.update_asset.call_args
+        assert call_args[1]["name"] == "New Name"
+        assert call_args[1]["odometer"] == 50000.0
+
+    @pytest.mark.asyncio
+    async def test_get_maintenance_schedule(self, vehicle, mock_client):
+        """Test getting maintenance schedule."""
+        await vehicle.get_maintenance_schedule()
+        mock_client.get_maintenance_schedule.assert_called_once_with(vehicle.vin)
+
+    @pytest.mark.asyncio
+    async def test_get_maintenance_schedule_no_vin(self, mock_client, vehicle_info):
+        """Test getting maintenance schedule without VIN."""
+        vehicle_info.vin = None
+        vehicle = Vehicle(mock_client, vehicle_info)
+
+        result = await vehicle.get_maintenance_schedule()
+
+        assert result is None
+        mock_client.get_maintenance_schedule.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_repair_orders(self, vehicle, mock_client):
+        """Test getting repair orders."""
+        await vehicle.get_repair_orders()
+        mock_client.get_repair_orders.assert_called_once_with(
+            vin=vehicle.vin, asset_id=vehicle.id
+        )
+
+    def test_odometer_property(self, vehicle, vehicle_info):
+        """Test odometer property."""
+        vehicle_info.odometer = 50000.0
+        assert vehicle.odometer == 50000.0
+
+    @pytest.mark.asyncio
+    async def test_start_engine(self, vehicle, mock_client):
+        """Test start engine command."""
+        result = await vehicle.start_engine()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(vehicle.id, "start")
+
+    @pytest.mark.asyncio
+    async def test_stop_engine(self, vehicle, mock_client):
+        """Test stop engine command."""
+        result = await vehicle.stop_engine()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(vehicle.id, "stop")
+
+    @pytest.mark.asyncio
+    async def test_honk_horn(self, vehicle, mock_client):
+        """Test honk horn command."""
+        result = await vehicle.honk_horn()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(vehicle.id, "honk")
+
+    @pytest.mark.asyncio
+    async def test_flash_lights(self, vehicle, mock_client):
+        """Test flash lights command."""
+        result = await vehicle.flash_lights()
+        assert result is True
+        mock_client.send_command.assert_called_once_with(vehicle.id, "flash")
+
+
+class TestDeviceProperties:
+    """Tests for Device properties."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    def test_last_seen(self, device, device_info):
+        """Test last_seen property."""
+        ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        device_info.last_seen = ts
+        assert device.last_seen == ts
+
+    def test_last_seen_none(self, device, device_info):
+        """Test last_seen property when None."""
+        device_info.last_seen = None
+        assert device.last_seen is None
+
+
+class TestDeviceRefreshNoData:
+    """Tests for Device refresh when no data is available."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        client.get_current_location = AsyncMock(return_value=None)
+        client.get_locations = AsyncMock(return_value=[])
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    @pytest.mark.asyncio
+    async def test_refresh_no_location_no_events(self, device, mock_client):
+        """Test refresh when neither location nor events are available."""
+        await device.refresh(force=True)
+
+        assert device.cached_location is None
+        assert device.last_refresh is not None
+
+
+class TestDeviceRefreshWithEvent:
+    """Tests for Device refresh with event data."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = MagicMock()
+        return client
+
+    @pytest.fixture
+    def device(self, mock_client, device_info):
+        """Create a Device instance."""
+        return Device(mock_client, device_info)
+
+    @pytest.mark.asyncio
+    async def test_refresh_uses_event_when_no_current_location(
+        self, device, mock_client
+    ):
+        """Test refresh uses event location when current location unavailable."""
+        event_loc = Location(latitude=32.84, longitude=-97.07, speed=25.0)
+
+        mock_client.get_current_location = AsyncMock(return_value=None)
+        mock_client.get_locations = AsyncMock(return_value=[event_loc])
+
+        await device.refresh(force=True)
+
+        assert device.cached_location is event_loc
+
+
+class TestEnrichLocationFromEvent:
+    """Tests for _enrich_location_from_event function."""
+
+    def test_enrich_all_telemetry(self):
+        """Test enriching location with all telemetry data."""
+        location = Location(latitude=32.84, longitude=-97.07)
+        event = Location(
+            latitude=32.84,
+            longitude=-97.07,
+            speed=25.0,
+            heading=180,
+            odometer=50000.0,
+            battery_voltage=12.5,
+            engine_hours=1500.0,
+            distance_driven=45000.0,
+            signal_strength=0.85,
+            gps_fix_quality="GOOD",
+            event_type="SLEEP_ENTER",
+            event_id="event-123",
+            address="123 Main St",
+            timestamp=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
+        )
+
+        _enrich_location_from_event(location, event)
+
+        assert location.speed == 25.0
+        assert location.heading == 180
+        assert location.odometer == 50000.0
+        assert location.battery_voltage == 12.5
+        assert location.engine_hours == 1500.0
+        assert location.distance_driven == 45000.0
+        assert location.signal_strength == 0.85
+        assert location.gps_fix_quality == "GOOD"
+        assert location.event_type == "SLEEP_ENTER"
+        assert location.event_id == "event-123"
+        assert location.address == "123 Main St"
+        assert location.timestamp is not None
+
+    def test_enrich_does_not_overwrite_existing(self):
+        """Test that enrichment does not overwrite existing values."""
+        location = Location(
+            latitude=32.84,
+            longitude=-97.07,
+            speed=30.0,
+            heading=90,
+        )
+        event = Location(
+            latitude=32.84,
+            longitude=-97.07,
+            speed=25.0,
+            heading=180,
+        )
+
+        _enrich_location_from_event(location, event)
+
+        # Should keep original values
+        assert location.speed == 30.0
+        assert location.heading == 90
+
+    def test_enrich_updates_timestamp_if_newer(self):
+        """Test that timestamp is updated if event is newer."""
+        old_ts = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        new_ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+
+        location = Location(latitude=32.84, longitude=-97.07, timestamp=old_ts)
+        event = Location(latitude=32.84, longitude=-97.07, timestamp=new_ts)
+
+        _enrich_location_from_event(location, event)
+
+        assert location.timestamp == new_ts
+
+    def test_enrich_does_not_update_timestamp_if_older(self):
+        """Test that timestamp is not updated if event is older."""
+        old_ts = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        new_ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+
+        location = Location(latitude=32.84, longitude=-97.07, timestamp=new_ts)
+        event = Location(latitude=32.84, longitude=-97.07, timestamp=old_ts)
+
+        _enrich_location_from_event(location, event)
+
+        assert location.timestamp == new_ts
+
+    def test_enrich_sets_timestamp_if_location_has_none(self):
+        """Test that timestamp is set if location has none."""
+        ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+
+        location = Location(latitude=32.84, longitude=-97.07, timestamp=None)
+        event = Location(latitude=32.84, longitude=-97.07, timestamp=ts)
+
+        _enrich_location_from_event(location, event)
+
+        assert location.timestamp == ts
+
+    def test_enrich_with_event_without_timestamp(self):
+        """Test enrichment when event has no timestamp."""
+        ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+
+        location = Location(latitude=32.84, longitude=-97.07, timestamp=ts)
+        event = Location(latitude=32.84, longitude=-97.07, timestamp=None)
+
+        _enrich_location_from_event(location, event)
+
+        # Should keep original timestamp
+        assert location.timestamp == ts
+
+
+class TestVehicleInfoProperty:
+    """Tests for Vehicle info property."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        return MagicMock()
+
+    def test_vehicle_info_property(self, mock_client, vehicle_info):
+        """Test that vehicle.info returns VehicleInfo."""
+        vehicle = Vehicle(mock_client, vehicle_info)
+        assert vehicle.info is vehicle_info

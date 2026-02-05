@@ -16,7 +16,15 @@ import aiohttp
 from .auth import DEFAULT_APP_TOKEN, AuthArtifacts, AuthManager
 from .device import Device, Vehicle
 from .exceptions import ApiError, DeviceNotFoundError
-from .models import DeviceInfo, Location, VehicleInfo, _parse_timestamp
+from .models import (
+    DeviceInfo,
+    Geofence,
+    Location,
+    MaintenanceSchedule,
+    RepairOrder,
+    VehicleInfo,
+    _parse_timestamp,
+)
 from .transport import AiohttpTransport
 
 # Default Spireon API endpoints
@@ -453,6 +461,383 @@ class LoJackClient:
                 or data.get("status") in ("ok", "PENDING", "SUBMITTED")
             )
         return True
+
+    async def update_asset(
+        self,
+        device_id: str,
+        *,
+        name: str | None = None,
+        color: str | None = None,
+        make: str | None = None,
+        model: str | None = None,
+        year: int | None = None,
+        vin: str | None = None,
+        odometer: float | None = None,
+    ) -> bool:
+        """Update asset information.
+
+        Args:
+            device_id: The asset ID to update.
+            name: New name for the asset.
+            color: Vehicle color.
+            make: Vehicle make.
+            model: Vehicle model.
+            year: Vehicle year.
+            vin: Vehicle VIN.
+            odometer: Current odometer reading.
+
+        Returns:
+            True if the update was successful.
+        """
+        headers = await self._get_headers()
+
+        payload: dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        if color is not None:
+            payload["color"] = color
+        if make is not None:
+            payload["make"] = make
+        if model is not None:
+            payload["model"] = model
+        if year is not None:
+            payload["year"] = year
+        if vin is not None:
+            payload["vin"] = vin
+        if odometer is not None:
+            payload["odometer"] = odometer
+
+        if not payload:
+            return True  # Nothing to update
+
+        path = f"/assets/{device_id}"
+        await self._services_transport.request(
+            "PUT", path, json=payload, headers=headers
+        )
+        return True
+
+    async def list_geofences(
+        self,
+        device_id: str,
+        *,
+        limit: int = -1,
+        offset: int = 0,
+    ) -> list[Geofence]:
+        """List geofences for a device.
+
+        Args:
+            device_id: The asset ID.
+            limit: Maximum number of geofences to return (-1 for all).
+            offset: Number of geofences to skip.
+
+        Returns:
+            A list of Geofence objects.
+        """
+        headers = await self._get_headers()
+        params: dict[str, Any] = {}
+
+        if limit != -1:
+            params["limit"] = limit
+        if offset > 0:
+            params["offset"] = offset
+
+        path = f"/assets/{device_id}/geofences"
+        data = await self._services_transport.request(
+            "GET", path, params=params, headers=headers
+        )
+
+        geofences: list[Geofence] = []
+        raw_items: list[Any] = []
+
+        if isinstance(data, dict):
+            raw_items = (
+                data.get("content")
+                or data.get("geofences")
+                or data.get("items")
+                or []
+            )
+        elif isinstance(data, list):
+            raw_items = data
+
+        for item in raw_items:
+            if isinstance(item, dict):
+                geofences.append(Geofence.from_api(item, asset_id=device_id))
+
+        return geofences
+
+    async def get_geofence(self, device_id: str, geofence_id: str) -> Geofence | None:
+        """Get a specific geofence.
+
+        Args:
+            device_id: The asset ID.
+            geofence_id: The geofence ID.
+
+        Returns:
+            The Geofence, or None if not found.
+        """
+        headers = await self._get_headers()
+        path = f"/assets/{device_id}/geofences/{geofence_id}"
+
+        try:
+            data = await self._services_transport.request("GET", path, headers=headers)
+        except ApiError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
+        if not isinstance(data, dict):
+            return None
+
+        return Geofence.from_api(data, asset_id=device_id)
+
+    async def create_geofence(
+        self,
+        device_id: str,
+        *,
+        name: str,
+        latitude: float,
+        longitude: float,
+        radius: float = 100.0,
+        address: str | None = None,
+    ) -> Geofence | None:
+        """Create a new geofence for a device.
+
+        Args:
+            device_id: The asset ID.
+            name: Display name for the geofence.
+            latitude: Center point latitude.
+            longitude: Center point longitude.
+            radius: Radius in meters (default: 100).
+            address: Optional address description.
+
+        Returns:
+            The created Geofence, or None if creation failed.
+        """
+        headers = await self._get_headers()
+
+        payload: dict[str, Any] = {
+            "name": name,
+            "location": {
+                "coordinates": {
+                    "lat": latitude,
+                    "lng": longitude,
+                },
+                "radius": radius,
+            },
+            "active": True,
+        }
+
+        if address:
+            payload["location"]["address"] = {"line1": address}
+
+        path = f"/assets/{device_id}/geofences"
+        data = await self._services_transport.request(
+            "POST", path, json=payload, headers=headers
+        )
+
+        if isinstance(data, dict):
+            return Geofence.from_api(data, asset_id=device_id)
+        return None
+
+    async def update_geofence(
+        self,
+        device_id: str,
+        geofence_id: str,
+        *,
+        name: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        radius: float | None = None,
+        address: str | None = None,
+        active: bool | None = None,
+    ) -> bool:
+        """Update an existing geofence.
+
+        Args:
+            device_id: The asset ID.
+            geofence_id: The geofence ID to update.
+            name: New display name.
+            latitude: New center point latitude.
+            longitude: New center point longitude.
+            radius: New radius in meters.
+            address: New address description.
+            active: Whether the geofence is active.
+
+        Returns:
+            True if the update was successful.
+        """
+        headers = await self._get_headers()
+
+        payload: dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        if active is not None:
+            payload["active"] = active
+
+        # Build location update if any location fields provided
+        if latitude is not None or longitude is not None or radius is not None:
+            location: dict[str, Any] = {}
+            if latitude is not None or longitude is not None:
+                location["coordinates"] = {}
+                if latitude is not None:
+                    location["coordinates"]["lat"] = latitude
+                if longitude is not None:
+                    location["coordinates"]["lng"] = longitude
+            if radius is not None:
+                location["radius"] = radius
+            if address is not None:
+                location["address"] = {"line1": address}
+            payload["location"] = location
+
+        if not payload:
+            return True  # Nothing to update
+
+        path = f"/assets/{device_id}/geofences/{geofence_id}"
+        await self._services_transport.request(
+            "PUT", path, json=payload, headers=headers
+        )
+        return True
+
+    async def delete_geofence(self, device_id: str, geofence_id: str) -> bool:
+        """Delete a geofence.
+
+        Args:
+            device_id: The asset ID.
+            geofence_id: The geofence ID to delete.
+
+        Returns:
+            True if the deletion was successful.
+        """
+        headers = await self._get_headers()
+        path = f"/assets/{device_id}/geofences/{geofence_id}"
+
+        await self._services_transport.request("DELETE", path, headers=headers)
+        return True
+
+    async def get_maintenance_schedule(self, vin: str) -> MaintenanceSchedule | None:
+        """Get maintenance schedule for a vehicle by VIN.
+
+        Args:
+            vin: Vehicle identification number.
+
+        Returns:
+            MaintenanceSchedule with service items, or None if not found.
+        """
+        headers = await self._get_headers()
+        params = {"vin": vin}
+
+        # Maintenance endpoint is on the services API
+        path = "/automotive/maintenanceSchedule"
+        try:
+            data = await self._services_transport.request(
+                "GET", path, params=params, headers=headers
+            )
+        except ApiError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
+        if not isinstance(data, dict):
+            return None
+
+        return MaintenanceSchedule.from_api(data, vin=vin)
+
+    async def get_repair_orders(
+        self,
+        *,
+        vin: str | None = None,
+        asset_id: str | None = None,
+        sort: str = "openDate:desc",
+    ) -> list[RepairOrder]:
+        """Get repair orders for a vehicle.
+
+        Either vin or asset_id must be provided.
+
+        Args:
+            vin: Vehicle identification number.
+            asset_id: Asset ID.
+            sort: Sort order (default: "openDate:desc").
+
+        Returns:
+            A list of RepairOrder objects.
+        """
+        if not vin and not asset_id:
+            return []
+
+        headers = await self._get_headers()
+        params: dict[str, Any] = {"sort": sort}
+
+        if vin:
+            params["vin"] = vin
+        if asset_id:
+            params["assetId"] = asset_id
+
+        path = "/repairOrders"
+        try:
+            data = await self._services_transport.request(
+                "GET", path, params=params, headers=headers
+            )
+        except ApiError as e:
+            if e.status_code == 404:
+                return []
+            raise
+
+        orders: list[RepairOrder] = []
+        raw_items: list[Any] = []
+
+        if isinstance(data, dict):
+            raw_items = (
+                data.get("content")
+                or data.get("repairOrders")
+                or data.get("orders")
+                or []
+            )
+        elif isinstance(data, list):
+            raw_items = data
+
+        for item in raw_items:
+            if isinstance(item, dict):
+                orders.append(RepairOrder.from_api(item))
+
+        return orders
+
+    async def get_user_info(self) -> dict[str, Any] | None:
+        """Get information about the authenticated user.
+
+        Returns:
+            User profile information as a dictionary, or None if unavailable.
+        """
+        headers = await self._get_headers()
+        path = "/identity"
+
+        try:
+            data = await self._services_transport.request("GET", path, headers=headers)
+        except ApiError:
+            return None
+
+        if isinstance(data, dict):
+            return data
+        return None
+
+    async def get_accounts(self) -> list[dict[str, Any]]:
+        """Get all accounts associated with the user.
+
+        Returns:
+            A list of account dictionaries.
+        """
+        headers = await self._get_headers()
+        path = "/accounts"
+
+        try:
+            data = await self._services_transport.request("GET", path, headers=headers)
+        except ApiError:
+            return []
+
+        if isinstance(data, dict):
+            return data.get("content") or data.get("accounts") or []
+        elif isinstance(data, list):
+            return data
+        return []
 
     async def close(self) -> None:
         """Close the client and release resources."""
