@@ -86,9 +86,13 @@ class Device:
     async def refresh(self, *, force: bool = False) -> None:
         """Refresh the device's cached location.
 
-        Fetches location from the asset's lastLocation for coordinates,
-        then enriches it with telemetry data from the latest event
-        (speed, battery_voltage, signal_strength, etc.).
+        Fetches location from the asset's lastLocation for coordinates
+        AND the latest event (sorted newest-first). Compares timestamps
+        and uses whichever source is more recent.
+
+        The asset's ``lastLocation`` / ``locationLastReported`` can lag
+        behind real-time ``AUTO_LOC`` events by 30+ minutes, so we must
+        check both and pick the freshest.
 
         Args:
             force: If True, always fetch new data even if cached.
@@ -96,20 +100,34 @@ class Device:
         if not force and self._cached_location is not None:
             return
 
-        # First try to get current location from asset's lastLocation
-        location = await self._client.get_current_location(self.id)
-
-        # Always fetch latest event for telemetry data
+        # Fetch both sources in parallel-safe order
+        asset_location = await self._client.get_current_location(self.id)
         events = await self._client.get_locations(self.id, limit=1)
         latest_event = events[0] if events else None
 
-        if location and location.latitude is not None:
-            # Enrich the lastLocation with telemetry from the event
+        # Determine which source is freshest by comparing timestamps.
+        # The events endpoint (now sorted by -date) returns AUTO_LOC and
+        # other real-time pings that the asset endpoint may not reflect.
+        asset_ts = asset_location.timestamp if asset_location else None
+        event_ts = latest_event.timestamp if latest_event else None
+
+        use_event = False
+        if latest_event and latest_event.latitude is not None:
+            if asset_ts is None and event_ts is not None:
+                use_event = True
+            elif event_ts is not None and asset_ts is not None:
+                use_event = event_ts >= asset_ts
+
+        if use_event and latest_event is not None:
+            # Event is newer — use it directly (it already has telemetry)
+            self._cached_location = latest_event
+        elif asset_location and asset_location.latitude is not None:
+            # Asset is newer or event unavailable — enrich with telemetry
             if latest_event:
-                _enrich_location_from_event(location, latest_event)
-            self._cached_location = location
+                _enrich_location_from_event(asset_location, latest_event)
+            self._cached_location = asset_location
         elif latest_event:
-            # Use the event location directly (it has all the telemetry)
+            # Fallback to event even without coordinates comparison
             self._cached_location = latest_event
         else:
             self._cached_location = None

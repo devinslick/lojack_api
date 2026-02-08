@@ -338,7 +338,14 @@ class LoJackClient:
             A list of Location objects.
         """
         headers = await self._get_headers()
-        params: dict[str, Any] = {}
+        params: dict[str, Any] = {
+            # Sort by date descending so the most recent event is first.
+            # Without this, the Spireon API may return events in an order
+            # where real-time AUTO_LOC events are buried behind older
+            # trip/sleep events, causing the integration to report stale
+            # location data.
+            "sort": "-date",
+        }
 
         if limit != -1:
             params["limit"] = limit

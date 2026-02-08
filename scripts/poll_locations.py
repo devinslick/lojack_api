@@ -15,10 +15,12 @@ import argparse
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
+from importlib.util import spec_from_file_location, module_from_spec
 
 from lojack_api import LoJackClient
 
 
+<<<<<<< HEAD
 def load_credentials(path: Path) -> tuple[str | None, str | None]:
     if not path.exists():
         raise FileNotFoundError(f"Credentials file not found: {path}")
@@ -207,15 +209,40 @@ Note:
     else:
         poll_interval = args.poll
 
-    cred_path = Path(__file__).parent / ".credentials"
     try:
-        username, password = load_credentials(cred_path)
-    except Exception as exc:
-        print(f"Failed to load credentials: {exc}")
-        return 1
+        spec = spec_from_file_location(
+            "scripts.credentials", Path(__file__).parent / "credentials.py"
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Failed to load local credentials module (spec missing)")
+        creds_mod = module_from_spec(spec)
+        assert creds_mod is not None
+        spec.loader.exec_module(creds_mod)
+        from typing import cast, Tuple
 
-    if username is None or password is None:
-        print("Failed to load credentials: username or password not found in file")
+        creds = creds_mod.load_credentials(Path(__file__).parent / ".credentials")
+        username, password = cast(Tuple[str, str], creds)
+    except Exception as exc:
+        print("Failed to load credentials:", exc)
+        return 1
+=======
+async def main() -> int:
+    try:
+        spec = spec_from_file_location(
+            "scripts.credentials", Path(__file__).parent / "credentials.py"
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Failed to load local credentials module (spec missing)")
+        creds_mod = module_from_spec(spec)
+        assert creds_mod is not None
+        spec.loader.exec_module(creds_mod)
+        from typing import cast, Tuple
+
+        creds = creds_mod.load_credentials(Path(__file__).parent / ".credentials")
+        username, password = cast(Tuple[str, str], creds)
+    except Exception as exc:
+        print("Failed to load credentials:", exc)
+>>>>>>> 12730e9 (Fix stale location retrieval, add diagnostic scripts, and normalize credentials loader)
         return 1
 
     print("Connecting to LoJack API...")

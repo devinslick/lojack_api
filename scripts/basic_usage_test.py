@@ -1,51 +1,25 @@
 import asyncio
 from pathlib import Path
+from importlib.util import spec_from_file_location, module_from_spec
 
 from lojack_api import LoJackClient
 
 
-def load_credentials(path: Path) -> tuple[str | None, str | None]:
-    """Load credentials from a simple key=value file or two-line file.
-
-    Accepts either:
-    username=...\npassword=...
-    or two lines: first is username, second is password.
-    """
-    if not path.exists():
-        raise FileNotFoundError(f"Credentials file not found: {path}")
-
-    lines = [
-        ln.strip()
-        for ln in path.read_text(encoding="utf-8").splitlines()
-        if ln.strip() and not ln.strip().startswith("#")
-    ]
-    if not lines:
-        raise ValueError("Credentials file is empty")
-
-    # key=value format
-    if any("=" in ln for ln in lines):
-        data = {}
-        for ln in lines:
-            if "=" in ln:
-                k, v = ln.split("=", 1)
-                data[k.strip().lower()] = v.strip()
-        return data.get("username"), data.get("password")
-
-    # fallback: assume first is username, second is password
-    if len(lines) >= 2:
-        return lines[0], lines[1]
-
-    raise ValueError("Credentials file must contain username and password")
-
-
 async def main() -> int:
-    # Load credentials from scripts/.credentials
-    cred_path = Path(__file__).parent / ".credentials"
+    # Load credentials from scripts/.credentials using the local helper module
     try:
-        username, password = load_credentials(cred_path)
-        if username is None or password is None:
-            print("Failed to load credentials: username or password not found in file")
-            return 1
+        spec = spec_from_file_location(
+            "scripts.credentials", Path(__file__).parent / "credentials.py"
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Failed to load local credentials module (spec missing)")
+        creds_mod = module_from_spec(spec)
+        assert creds_mod is not None
+        spec.loader.exec_module(creds_mod)
+        from typing import cast, Tuple
+
+        creds = creds_mod.load_credentials(Path(__file__).parent / ".credentials")
+        username, password = cast(Tuple[str, str], creds)
     except Exception as exc:
         print("Failed to load credentials:", exc)
         return 1
