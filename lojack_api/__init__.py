@@ -45,7 +45,7 @@ from .models import (
 )
 from .transport import AiohttpTransport
 
-__version__ = "0.7.0"
+__version__ = "0.7.2"
 
 __all__ = [
     # Main client

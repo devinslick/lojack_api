@@ -12,10 +12,11 @@ The Spireon LoJack API uses:
 from __future__ import annotations
 
 import base64
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .exceptions import AuthenticationError
 
@@ -183,6 +184,19 @@ class AuthManager:
             user_id=self._user_id,
         )
 
+    @staticmethod
+    def _extract_user_id_from_jwt(token: str) -> str | None:
+        """Extract user ID from Spireon JWT ns:u claim (no signature verification needed)."""
+        try:
+            parts = token.split(".")
+            if len(parts) != 3:
+                return None
+            padding = "=" * (4 - len(parts[1]) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(parts[1] + padding))
+            return cast("str | None", payload.get("ns:u") or payload.get("sub"))
+        except Exception:
+            return None
+
     async def login(self) -> str:
         """Authenticate with the identity service using Basic Auth.
 
@@ -215,21 +229,30 @@ class AuthManager:
 
         token: str = str(token_value)
         self._access_token = token
-        self._user_id = data.get("userId") or data.get("user_id")
+        self._user_id = (
+            self._extract_user_id_from_jwt(token)
+            or data.get("userId")
+            or data.get("user_id")
+        )
 
-        # Parse expiration - tokens typically expire after some time
-        expires_in = data.get("expiresIn") or data.get("expires_in")
-        if expires_in:
+        # Parse expiration - prefer ISO 8601 expiresOn, fall back to expiresIn seconds
+        expires_on = data.get("expiresOn")
+        if expires_on:
             try:
-                self._expires_at = datetime.now(timezone.utc) + timedelta(
-                    seconds=int(expires_in)
-                )
-            except (ValueError, TypeError):
-                # Default to 1 hour if not specified
+                self._expires_at = datetime.fromisoformat(expires_on.replace("Z", "+00:00"))
+            except ValueError:
                 self._expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         else:
-            # Default expiration if not provided
-            self._expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+            expires_in = data.get("expiresIn") or data.get("expires_in")
+            if expires_in:
+                try:
+                    self._expires_at = datetime.now(timezone.utc) + timedelta(
+                        seconds=int(expires_in)
+                    )
+                except (ValueError, TypeError):
+                    self._expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+            else:
+                self._expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
         return token
 
