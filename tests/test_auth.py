@@ -438,6 +438,22 @@ class TestGetSpireonHeaders:
         assert headers["Authorization"] == "Basic base64-credentials"
 
 
+class TestExtractUserIdFromJwt:
+    """Tests for AuthManager._extract_user_id_from_jwt."""
+
+    def test_returns_none_for_non_three_part_token(self):
+        """Token without three dot-separated parts returns None."""
+        from lojack_api.auth import AuthManager
+        assert AuthManager._extract_user_id_from_jwt("not.a.valid.jwt.parts") is None
+
+    def test_returns_none_for_invalid_json_payload(self):
+        """Payload that is valid base64 but not JSON triggers except and returns None."""
+        import base64
+        from lojack_api.auth import AuthManager
+        bad_payload = base64.urlsafe_b64encode(b"not-json").decode().rstrip("=")
+        assert AuthManager._extract_user_id_from_jwt(f"header.{bad_payload}.sig") is None
+
+
 class TestEncodeBasicAuth:
     """Tests for encode_basic_auth function."""
 
