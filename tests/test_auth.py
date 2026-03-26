@@ -120,8 +120,9 @@ class TestAuthManager:
         import base64
         import json
 
+        claims = {"sub": "fnmrihikdnykh7rng", "ns:u": "da05c72d-6a30-466f-8d86-763bd1e8844a"}
         payload = base64.urlsafe_b64encode(
-            json.dumps({"sub": "fnmrihikdnykh7rng", "ns:u": "da05c72d-6a30-466f-8d86-763bd1e8844a"}).encode()
+            json.dumps(claims).encode()
         ).decode().rstrip("=")
         jwt_token = f"header.{payload}.signature"
 
