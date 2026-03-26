@@ -100,7 +100,7 @@ class TestAuthManager:
 
     @pytest.mark.asyncio
     async def test_login_success(self, auth, transport):
-        """Test successful login."""
+        """Test successful login with legacy userId field."""
         transport.request.return_value = {
             "token": "new-token",
             "expiresIn": 3600,
@@ -113,6 +113,82 @@ class TestAuthManager:
         assert auth.is_authenticated
         assert auth.user_id == "user-123"
         transport.request.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_login_user_id_from_jwt(self, auth, transport):
+        """Test that user_id is extracted from JWT ns:u claim (real API response shape)."""
+        import base64
+        import json
+
+        payload = base64.urlsafe_b64encode(
+            json.dumps({"sub": "fnmrihikdnykh7rng", "ns:u": "da05c72d-6a30-466f-8d86-763bd1e8844a"}).encode()
+        ).decode().rstrip("=")
+        jwt_token = f"header.{payload}.signature"
+
+        transport.request.return_value = {
+            "token": jwt_token,
+            "scope": "ACCOUNT_USER_SCOPE",
+            "expiresOn": "2026-03-27T03:12:54Z",
+            "refreshBy": "2026-03-27T03:11:54Z",
+            "refreshInSeconds": 86339,
+        }
+
+        token = await auth.login()
+
+        assert token == jwt_token
+        assert auth.user_id == "da05c72d-6a30-466f-8d86-763bd1e8844a"
+
+    @pytest.mark.asyncio
+    async def test_login_user_id_falls_back_to_sub(self, auth, transport):
+        """Test that user_id falls back to JWT sub claim when ns:u is absent."""
+        import base64
+        import json
+
+        payload = base64.urlsafe_b64encode(
+            json.dumps({"sub": "fallback-sub-id"}).encode()
+        ).decode().rstrip("=")
+        jwt_token = f"header.{payload}.signature"
+
+        transport.request.return_value = {
+            "token": jwt_token,
+            "expiresOn": "2026-03-27T03:12:54Z",
+        }
+
+        await auth.login()
+
+        assert auth.user_id == "fallback-sub-id"
+
+    @pytest.mark.asyncio
+    async def test_login_expires_on_parsed(self, auth, transport):
+        """Test that expiresOn ISO 8601 timestamp is parsed correctly."""
+        transport.request.return_value = {
+            "token": "new-token",
+            "expiresOn": "2026-03-27T03:12:54Z",
+        }
+
+        await auth.login()
+
+        assert auth._expires_at is not None
+        assert auth._expires_at.year == 2026
+        assert auth._expires_at.month == 3
+        assert auth._expires_at.day == 27
+
+    @pytest.mark.asyncio
+    async def test_login_expires_on_invalid_falls_back(self, auth, transport):
+        """Test that an invalid expiresOn falls back to 1-hour default."""
+        from datetime import datetime, timezone
+
+        transport.request.return_value = {
+            "token": "new-token",
+            "expiresOn": "not-a-timestamp",
+        }
+
+        before = datetime.now(timezone.utc)
+        await auth.login()
+
+        assert auth._expires_at is not None
+        delta = auth._expires_at - before
+        assert 3590 < delta.total_seconds() < 3610  # ~1 hour
 
     @pytest.mark.asyncio
     async def test_login_missing_credentials(self, transport):
