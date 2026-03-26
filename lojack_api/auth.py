@@ -16,7 +16,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .exceptions import AuthenticationError
 
@@ -193,7 +193,7 @@ class AuthManager:
                 return None
             padding = "=" * (4 - len(parts[1]) % 4)
             payload = json.loads(base64.urlsafe_b64decode(parts[1] + padding))
-            return payload.get("ns:u") or payload.get("sub")
+            return cast("str | None", payload.get("ns:u") or payload.get("sub"))
         except Exception:
             return None
 
